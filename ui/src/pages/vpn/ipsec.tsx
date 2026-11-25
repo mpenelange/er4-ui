@@ -3,6 +3,7 @@
 //   - phones and laptops: the built-in IKEv2 clients (iOS, macOS, Windows, Android 11+) with a
 //     username and password; the router's own CA signs its server certificate
 //   - site-to-site: another router or a cloud gateway, pre-shared key, both sides' subnets
+import { InstallFeature } from '../../components/install'
 import { useState } from 'preact/hooks'
 import { uci } from '../../api/uci'
 import { useAsync, usePoll } from '../../api/store'
@@ -37,6 +38,9 @@ export function IpsecCard({ data, sub, id }: { data: VpnData; sub?: string; id?:
   })
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<unknown>()
+  if (st && !st.installed) return (
+    <Card title="IPsec / IKEv2"><InstallFeature feature="ipsec" what="strongSwan (IKEv2 with username and password, certificates)" /></Card>
+  )
   if (!st?.installed || !cfg.data) return null
   const c = cfg.data.c
   const run = async (f: () => Promise<unknown>) => {

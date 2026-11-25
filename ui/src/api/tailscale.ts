@@ -1,8 +1,8 @@
 // Tailscale on the router (er4 plugin over the tailscale CLI):
 //   er4.tailscale_status                         -> TsStatus
-//   er4.tailscale_install                        -> {}  (downloads Tailscale's own build onto the eMMC; progress in status.install)
-//   er4.tailscale_update                         -> {} | {error}  (`tailscale update --yes` in the background)
-//   er4.tailscale_up {routes, exit_node, accept_routes, auto_update} -> {} | {error}  (login in the background, or `tailscale set`)
+//   er4.tailscale_install                        -> {} | {error}  (apk add tailscale in the background; progress in status.install)
+//   er4.tailscale_update                         -> {} | {error}  (apk upgrade tailscale, then a service restart)
+//   er4.tailscale_up {routes, exit_node, accept_routes} -> {} | {error}  (login in the background, or `tailscale set`)
 //   er4.tailscale_logout {stop}                  -> {}
 // The firewall side (network 'tailscale' on tailscale0, zone, WAN UDP rule) is plain UCI, staged.
 import { api } from './client'
@@ -16,7 +16,7 @@ export interface TsNode {
 }
 export interface TsStatus {
   installed: boolean; enabled?: boolean; running?: boolean
-  /** the download of Tailscale's build (null before the first) */
+  /** the package install (null before the first) */
   install?: { state: 'downloading' | 'ok' | 'error'; message?: string | null } | null
   version?: string | null
   /** newer release available (null when current, or unknown) */
@@ -38,7 +38,7 @@ async function checked<T>(p: Promise<T | { error: string }>): Promise<T> {
 export const tailscale = {
   status: () => api.call<TsStatus>('er4', 'tailscale_status'),
   /** exit_node advertises 0.0.0.0/0 and ::/0; routes are the subnet routes only */
-  up: (s: TsSettings) => checked(api.call<object | { error: string }>('er4', 'tailscale_up', { routes: s.routes, exit_node: s.exit_node, accept_routes: s.accept_routes, auto_update: s.auto_update })),
+  up: (s: TsSettings) => checked(api.call<object | { error: string }>('er4', 'tailscale_up', { routes: s.routes, exit_node: s.exit_node, accept_routes: s.accept_routes })),
   install: () => api.call('er4', 'tailscale_install'),
   update: () => checked(api.call<object | { error: string }>('er4', 'tailscale_update')),
   logout: (stop = false) => api.call('er4', 'tailscale_logout', { stop }),

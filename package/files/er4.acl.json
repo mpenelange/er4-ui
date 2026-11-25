@@ -19,7 +19,12 @@
 					"firewall_status",
 					"processes",
 					"crontab",
-					"capture_status"
+					"capture_status",
+					"packages",
+					"firmware_info",
+					"tailscale_status",
+					"ipsec_status",
+					"acme_status"
 				],
 				"luci-rpc": [
 					"getDHCPLeases",
@@ -95,7 +100,19 @@
 					"kill",
 					"crontab_set",
 					"capture_start",
-					"capture_stop"
+					"capture_stop",
+					"pkg_install",
+					"pkg_upgrade",
+					"firmware_verify",
+					"firmware_install",
+					"tailscale_install",
+					"tailscale_update",
+					"tailscale_up",
+					"tailscale_logout",
+					"ipsec_cert",
+					"acme_setup",
+					"acme_renew",
+					"acme_off"
 				],
 				"network.interface.*": [
 					"up",

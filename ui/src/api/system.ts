@@ -1,62 +1,28 @@
-// System-area calls: password, clock, firmware (whole-image updates), backup/restore,
+// System-area calls: password, clock, firmware (sysupgrade), backup/restore,
 // reboot. Router sources:
 //   er4.set_password / er4.timezones / er4.set_localtime       ER-4 plugin (LuCI's luci.* equivalents)
 //   uci.configs                                               rpcd built-in
 //   /cgi-bin/cgi-upload, /cgi-bin/cgi-backup                  cgi-io (an er4-ui dependency)
-//   er4.firmware_* / er4.boot_previous / er4.config_* / er4.factory_reset
+//   er4.firmware_* / er4.config_* / er4.factory_reset
 //                                                             ER-4 plugin (see api/mock/ext/system.ts)
 import { api, isMock } from './client'
 import { mockFiles } from './mock/ext/system'
 
-/** From the trailer the image build appends after the kernel: which build this is (every image
- *  says "OpenWrt 25.12.5 r33051", so that can't tell them apart). null for images built before. */
-export interface FirmwareBuild { rev: string; kernel: string; built: number }
-export interface FirmwareImage {
-  build: FirmwareBuild | null
-  /** OpenWrt release; the router knows it only for the running image */
-  version?: string
-  installed?: number // unix seconds
-  size?: number // bytes
-}
-/** The router keeps the boot image and the previous one. An install copies the running image to
- *  "previous" and writes the new one, which boots next; "Boot previous" swaps the two and reboots. */
+/** er4.firmware_info: the running system */
 export interface FirmwareInfo {
+  release: { id?: string; release?: string; revision?: string; description?: string; [k: string]: string | undefined }
   board: string
-  running: FirmwareImage
-  /** installed since this boot: starts at the next reboot (the running one is then the previous) */
-  next: FirmwareImage | null
-  /** what Boot previous would start (null while an install waits for its reboot, or none kept) */
-  previous: FirmwareImage | null
-  /** GitHub repo ("owner/name") for the release check; null until releases are published */
-  channel: string | null
-}
-export interface FirmwareRelease {
-  version: string
-  revision: string
-  tag: string
-  published: number
-  size: number
-  sha256: string
-  url: string
-  notes: string
-}
-export interface FirmwareCheck {
-  current: string
-  latest?: FirmwareRelease
-  update_available: boolean
-  checked: number
+  model: string
+  kernel: string
+  /** the running kernel has the Octeon offload driver hooks (patch 703) */
+  hooks: boolean
 }
 export interface VerifyCheck { id: string; label: string; ok: boolean | null; detail?: string }
+/** er4.firmware_verify: valid = sysupgrade accepts it for this board (the offload check only warns) */
 export interface FirmwareVerify {
   valid: boolean
   checks: VerifyCheck[]
-  image?: { build: FirmwareBuild | null; version?: string | null; size: number; sha256: string }
-}
-export interface FirmwareStatus {
-  state: 'idle' | 'downloading' | 'writing' | 'ready' | 'error'
-  progress: number // 0..1
-  message?: string
-  path?: string
+  image?: { size: number; sha256: string }
 }
 export interface ConfigInspect {
   valid: boolean
@@ -120,12 +86,12 @@ export const system = {
   },
 
   firmwareInfo: () => api.call<FirmwareInfo>('er4', 'firmware_info'),
-  firmwareCheck: () => api.call<FirmwareCheck>('er4', 'firmware_check'),
-  firmwareDownload: (url: string) => api.call<FirmwareStatus>('er4', 'firmware_download', { url, path: FIRMWARE_PATH }),
   firmwareVerify: (path = FIRMWARE_PATH) => api.call<FirmwareVerify>('er4', 'firmware_verify', { path }),
-  firmwareInstall: (path = FIRMWARE_PATH) => api.call<FirmwareStatus>('er4', 'firmware_install', { path }),
-  firmwareStatus: () => api.call<FirmwareStatus>('er4', 'firmware_status'),
-  bootPrevious: () => api.call<object>('er4', 'boot_previous'),
+  /** sysupgrade [-n] two seconds after it answers; the router reboots */
+  firmwareInstall: async (path = FIRMWARE_PATH, keep = true) => {
+    const r = await api.call<{ error?: string }>('er4', 'firmware_install', { path, keep })
+    if (r?.error) throw new Error(r.error)
+  },
 
   configInspect: (path = BACKUP_PATH) => api.call<ConfigInspect>('er4', 'config_inspect', { path }),
   configRestore: (path = BACKUP_PATH) => api.call('er4', 'config_restore', { path }),

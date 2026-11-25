@@ -15,10 +15,7 @@ export const SCENARIOS = {
   'offload-off': 'offload module not loaded',
   'conntrack-full': 'conntrack table nearly full',
   'no-leases': 'no DHCP clients',
-  'update-available': 'GitHub has a newer release',
   'verify-fail': 'uploaded image fails verification',
-  'install-fail': 'writing the image fails half-way',
-  'no-previous': 'no previous image kept',
   // network/devices states (one at a time, see netScenario)
   empty: 'no devices, leases or extra networks',
   fresh: 'factory defaults: lan on lan1 only, lan2/lan3 unassigned, no bridge',

@@ -5,6 +5,7 @@ import { usePoll } from '../../api/store'
 import { domainOk, emailOk, hostOk, https, tokenOk, type AcmeStatus } from '../../api/https'
 import { Badge, Button, Card, ErrorBox, Field } from '../../components/ui'
 import { Icon } from '../../components/icons'
+import { InstallFeature } from '../../components/install'
 
 export function HttpsCard() {
   const poll = usePoll(https.status, 4000)
@@ -21,7 +22,7 @@ export function HttpsCard() {
     <Card title={<span class="row">HTTPS certificate {st && <State st={st} />}</span>}>
       <div class="stack-3">
         {!st ? (poll.error ? <ErrorBox error={poll.error} /> : <span class="muted">Loading…</span>)
-          : !st.installed ? <span class="secondary">This image has no ACME client (acme.sh).</span>
+          : !st.installed ? <InstallFeature feature="acme" what="acme.sh with its DNS plugins" />
           : !cfg || editing ? (
             <Setup st={st} busy={busy} onCancel={cfg ? () => setEditing(false) : undefined}
               onSave={(s) => run(async () => { await https.setup(s); setEditing(false) })} />

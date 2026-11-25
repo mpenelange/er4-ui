@@ -305,22 +305,71 @@ function cron_line_ok(l) {
 	return true;
 }
 
-// ---- Tailscale (er4.tailscale_*) -------------------------------------------------------------
-// The binaries are Tailscale's own build on the eMMC, fetched by er4-tailscale-fetch (/usr/sbin
-// links there); until then TS doesn't resolve and the UI offers to install it.
-const TS = '/usr/sbin/tailscale';
-const TS_FETCH = '/tmp/er4-tailscale-fetch';
-const TS_UPDATE_LOG = '/tmp/er4-tailscale-update.log';
-function ts_job(pidfile) {
-	const pid = trim(readfile(pidfile) ?? '');
-	return pid != '' && system(`kill -0 ${int(pid)} 2>/dev/null`) == 0;
+// ---- optional features' packages (er4.packages / er4.pkg_install / er4.pkg_upgrade) -----------
+// The official OpenWrt packages behind Tailscale, IPsec and the HTTPS certificate, installed and
+// upgraded with apk on request. One job at a time, in the background (apk update runs first);
+// the cards poll er4.packages for progress.
+const PKG_SETS = {
+	tailscale: [ 'tailscale' ],
+	ipsec: [ 'strongswan-default', 'strongswan-pki', 'strongswan-mod-eap-identity', 'strongswan-mod-eap-mschapv2',
+		'strongswan-mod-openssl', 'xfrm', 'kmod-xfrm-interface' ],
+	acme: [ 'acme-acmesh', 'acme-acmesh-dnsapi' ]
+};
+// what says a feature is installed (the same files its status method checks)
+const PKG_PROBE = { tailscale: '/usr/sbin/tailscale', ipsec: '/usr/sbin/swanctl', acme: '/usr/lib/acme/client/dnsapi/dns_cf.sh' };
+const PKG_JOB = '/tmp/er4-pkg';      // .what ("install tailscale"), .pid, .log, .rc
+// -> {action, feature, running, rc (null while running), ok, log: last lines} | null before the first job
+function pkg_job() {
+	const what = match(trim(readfile(`${PKG_JOB}.what`) ?? ''), /^(\S+) (\S+)$/);
+	if (!what) return null;
+	const pid = trim(readfile(`${PKG_JOB}.pid`) ?? '');
+	const rc = readfile(`${PKG_JOB}.rc`);
+	const log = filter(split(trim(readfile(`${PKG_JOB}.log`) ?? ''), '\n'), length);
+	// no pid yet: the job was started a moment ago (counts as running for a while, so a second
+	// request can't start another apk next to it)
+	const running = rc == null && (pid != '' ? system(`kill -0 ${int(pid)} 2>/dev/null`) == 0
+		: time() - (stat(`${PKG_JOB}.what`)?.mtime ?? 0) < 30);
+	// ok: apk succeeded. Its exit code alone can't say: a package left broken earlier (base-files
+	// after a failed /rom/note on squashfs) makes every later run end in "1 error" and exit 1.
+	// So: exit 0, or no ERROR line of this run's own and apk's summary line at the end.
+	const code = rc == null ? null : +trim(rc);
+	const ok = code == 0 || (code != null && !length(filter(log, (l) => match(l, /^ERROR/)))
+		&& match(log[length(log) - 1] ?? '', /^[0-9]+ errors?; /) != null);
+	return { action: what[1], feature: what[2], running, rc: code, ok, log: slice(log, -8) };
 }
-// "downloading" | "ok <version>" | "error <message>" -> {state, message?}, null before the first install
-function ts_fetch_state() {
-	const t = trim(readfile(TS_FETCH) ?? '');
-	if (t == '') return null;
-	const m = match(t, /^(\S+) ?(.*)$/);
-	return { state: m[1] == 'downloading' && !ts_job('/tmp/er4-tailscale-fetch.pid') ? 'error' : m[1], message: m[2] || (m[1] == 'downloading' ? null : 'interrupted') };
+function pkg_start(action, feature) {
+	const set = PKG_SETS[feature];
+	if (!set || (action != 'install' && action != 'upgrade')) return { error: 'unknown feature' };
+	if (pkg_job()?.running) return { error: 'another package job is still running' };
+	let cmd = `apk update && apk ${action == 'install' ? 'add' : 'upgrade'} ${join(' ', set)}`;
+	// strongSwan's packages enable and start charon (UDP 500/4500) with nothing set up: off until
+	// the VPN page saves the first remote (it enables swanctl then)
+	if (feature == 'ipsec' && action == 'install')
+		cmd += ' && { uci -q show ipsec | grep -q "=remote$" || { /etc/init.d/swanctl stop; /etc/init.d/swanctl disable; }; }';
+	if (feature == 'tailscale' && action == 'upgrade')
+		cmd += ' && { /etc/init.d/tailscale enabled && /etc/init.d/tailscale restart; true; }';
+	unlink(`${PKG_JOB}.rc`);
+	unlink(`${PKG_JOB}.pid`);
+	writefile(`${PKG_JOB}.what`, `${action} ${feature}`);
+	system(`sh -c ${q(`echo $$ > ${PKG_JOB}.pid; ( ${cmd} ) > ${PKG_JOB}.log 2>&1; echo $? > ${PKG_JOB}.rc`)} </dev/null >/dev/null 2>&1 &`);
+	return {};
+}
+// the newer version apk offers for a package, or null ("name-1.2.3-r1 arch {...} [upgradable from: ...]")
+function pkg_upgradable(name) {
+	const m = match(sh(`apk list -u ${q(name)} 2>/dev/null`), regexp(`^${name}-([0-9][^ ]*) `));
+	return m ? m[1] : null;
+}
+
+// ---- Tailscale (er4.tailscale_*) -------------------------------------------------------------
+// OpenWrt's tailscale package (installed by er4.pkg_install, updated by er4.pkg_upgrade: Tailscale
+// can't update a package-managed install itself).
+const TS = '/usr/sbin/tailscale';
+// the package job as the card's install progress: {state: downloading|ok|error, message}
+function ts_install_state() {
+	const j = pkg_job();
+	if (!j || j.feature != 'tailscale' || j.action != 'install') return null;
+	if (j.running) return { state: 'downloading', message: null };
+	return j.ok ? { state: 'ok', message: null } : { state: 'error', message: j.log[length(j.log) - 1] ?? 'install failed' };
 }
 function ts_json(args) {
 	const out = sh(`${TS} ${args} 2>/dev/null`);
@@ -448,6 +497,88 @@ const methods = {
 				push(out, { ip: f[0], dev: f[2], mac: ll >= 0 ? f[ll + 1] : '', state: f[length(f) - 1] });
 			}
 			return { neighbors: out };
+		}
+	},
+
+	// -> {tailscale, ipsec, acme: installed?, job: the current or last package job (see pkg_job)}
+	packages: {
+		call: function() {
+			const r = { job: pkg_job() };
+			for (let f, path in PKG_PROBE) r[f] = !!access(path);
+			return r;
+		}
+	},
+
+	// {feature: tailscale|ipsec|acme} -> {} | {error}: apk add / apk upgrade its packages, in the
+	// background; progress in packages.job
+	pkg_install: {
+		args: { feature: '' },
+		call: function(req) { return pkg_start('install', req.args.feature); }
+	},
+	pkg_upgrade: {
+		args: { feature: '' },
+		call: function(req) { return pkg_start('upgrade', req.args.feature); }
+	},
+
+	// ---- firmware: OpenWrt's sysupgrade -----------------------------------------------------
+	// -> {release, board, model, kernel, hooks: the running kernel has the Octeon offload hooks}
+	firmware_info: {
+		call: function() {
+			return {
+				release: release(),
+				board: trim(readfile('/tmp/sysinfo/board_name') ?? ''),
+				model: trim(readfile('/tmp/sysinfo/model') ?? ''),
+				kernel: trim(sh('uname -r')),
+				hooks: oo_stats()?.driver_hooks == 'yes'
+			};
+		}
+	},
+
+	// {path} -> {valid, checks: [{id, label, ok (true|false|null = information), detail}], image: {size, sha256}}
+	// | {error}. valid: sysupgrade accepts it for this board. The offload check only warns: an
+	// image without the driver hooks (an official build) works, but nothing is offloaded in hardware.
+	firmware_verify: {
+		args: { path: '' },
+		call: function(req) {
+			const path = req.args.path;
+			if (path != '/tmp/firmware.bin') return { error: 'bad path' };
+			const st = stat(path);
+			if (!st) return { error: 'no image uploaded' };
+			const checks = [];
+			const board = trim(readfile('/tmp/sysinfo/board_name') ?? '');
+			const dir = `sysupgrade-${replace(board, ',', '_')}/`;
+			const members = sh(`tar -tf ${q(path)} 2>/dev/null`);
+			const ours = index(split(members, '\n'), dir) >= 0;
+			push(checks, { id: 'board', label: `Built for ${board}`, ok: ours,
+				detail: ours ? `contains ${dir}` : (length(members) ? 'not a sysupgrade image for this router' : 'not a sysupgrade image (.tar)') });
+			const t = sh(`sysupgrade -T ${q(path)} 2>&1; echo "rc=$?"`);
+			const ok = match(t, /rc=0$/) != null;
+			push(checks, { id: 'sysupgrade', label: 'sysupgrade accepts it', ok,
+				detail: join('; ', filter(map(split(replace(t, /rc=[0-9]+$/, ''), '\n'), (l) => trim(replace(l, /^.*upgrade: /, ''))), length)) || (ok ? 'ok' : 'refused') });
+			if (ours) {
+				// one substring search in memory: busybox grep takes ~15 s over a 12 MB binary
+				const k = '/tmp/er4-fw-kernel';
+				system(`tar -xOf ${q(path)} ${q(dir + 'kernel')} > ${k} 2>/dev/null`);
+				const hooks = index(readfile(k) ?? '', 'cvm_oct_offload_register') >= 0;
+				unlink(k);
+				push(checks, { id: 'offload', label: 'Has the Octeon offload driver hooks (patch 703)', ok: hooks,
+					detail: hooks ? 'hardware offload keeps working' : 'an official build: it works, but nothing is offloaded in hardware' });
+			}
+			const sha256 = split(sh(`sha256sum ${q(path)}`), ' ')[0];
+			push(checks, { id: 'sha256', label: 'SHA-256', ok: null, detail: sha256 });
+			return { valid: ours && ok, checks, image: { size: st.size, sha256 } };
+		}
+	},
+
+	// {path, keep: bool} -> {} | {error}: sysupgrade in two seconds (it reboots); keep: settings too
+	firmware_install: {
+		args: { path: '', keep: true },
+		call: function(req) {
+			const path = req.args.path;
+			if (path != '/tmp/firmware.bin' || !stat(path)) return { error: 'no image uploaded' };
+			if (system(`sysupgrade -T ${q(path)} >/dev/null 2>&1`) != 0) return { error: 'sysupgrade refuses this image' };
+			system(`(sleep 2; sysupgrade ${req.args.keep === false ? '-n ' : ''}${q(path)}) </dev/null >/dev/null 2>&1 &`);
+			return {};
 		}
 	},
 
@@ -903,13 +1034,13 @@ const methods = {
 	// latest: the newest release when this one is behind (tailscaled checks; null when current).
 	tailscale_status: {
 		call: function() {
-			const install = ts_fetch_state();
+			const install = ts_install_state();
 			if (!access(TS)) return { installed: false, install };
 			const running = sh('pidof tailscaled') != '';
-			const updating = ts_job('/tmp/er4-tailscale-update.pid');
-			const log = split(trim(readfile(TS_UPDATE_LOG) ?? ''), '\n');
+			const j = pkg_job();
+			const updating = !!(j?.running && j.feature == 'tailscale' && j.action == 'upgrade');
 			const r = { installed: true, install, enabled: system('/etc/init.d/tailscale enabled') == 0, running,
-				updating, update_log: log[length(log) - 1] || null };
+				updating, update_log: updating ? j.log[length(j.log) - 1] ?? null : null };
 			// the CLI is a 35 MB binary: only ask it when tailscaled can't say
 			r.version = running ? null : split(sh(`${TS} version 2>/dev/null`), '\n')[0] || null;
 			if (!running) return r;
@@ -926,9 +1057,8 @@ const methods = {
 			});
 			const peers = [];
 			for (let k, n in st.Peer ?? {}) push(peers, node(n));
-			const cv = st.ClientVersion;
 			return {
-				...r, latest: cv && !cv.RunningLatest ? cv.LatestVersion ?? null : null,
+				...r, latest: pkg_upgradable('tailscale'),
 				backend: st.BackendState, auth_url: st.AuthURL || null, tailnet: st.CurrentTailnet?.Name,
 				health: st.Health ?? [], self: st.Self ? node(st.Self) : null, peers,
 				prefs: p ? { routes: p.AdvertiseRoutes ?? [], exit_node: index(p.AdvertiseRoutes ?? [], '0.0.0.0/0') >= 0,
@@ -937,32 +1067,26 @@ const methods = {
 		}
 	},
 
-	// {} -> {}: download and install Tailscale (er4-tailscale-fetch in the background); progress
-	// in tailscale_status.install
+	// {} -> {} | {error}: install OpenWrt's tailscale package; progress in tailscale_status.install
 	tailscale_install: {
 		call: function() {
-			system('/usr/libexec/er4-tailscale-fetch </dev/null >/dev/null 2>&1 &');
-			return {};
+			return pkg_start('install', 'tailscale');
 		}
 	},
 
-	// {} -> {} | {error}: `tailscale update --yes` in the background (Tailscale's updater: checks
-	// the release signature, replaces the binaries, restarts the service)
+	// {} -> {} | {error}: upgrade the tailscale package (apk) and restart the service
 	tailscale_update: {
 		call: function() {
 			if (!access(TS)) return { error: 'tailscale is not installed' };
-			if (ts_job('/tmp/er4-tailscale-update.pid')) return {};
-			system(`sh -c 'echo $$ >/tmp/er4-tailscale-update.pid; exec ${TS} update --yes' </dev/null >${TS_UPDATE_LOG} 2>&1 &`);
-			return {};
+			return pkg_start('upgrade', 'tailscale');
 		}
 	},
 
-	// {routes: [cidr], exit_node: bool, accept_routes: bool, auto_update: bool} -> {} | {error}
+	// {routes: [cidr], exit_node: bool, accept_routes: bool} -> {} | {error}
 	// Starts the service; logged in it applies the settings (tailscale set), otherwise it starts a
-	// login in the background (tailscale up, then the auto-update setting, which `up` doesn't
-	// take) and tailscale_status then carries the auth_url.
+	// login in the background (tailscale up) and tailscale_status then carries the auth_url.
 	tailscale_up: {
-		args: { routes: [], exit_node: false, accept_routes: false, auto_update: true },
+		args: { routes: [], exit_node: false, accept_routes: false },
 		call: function(req) {
 			if (!access(TS)) return { error: 'tailscale is not installed' };
 			const routes = req.args.routes ?? [];
@@ -975,12 +1099,11 @@ const methods = {
 				for (let i = 0; i < 5 && !stat('/var/run/tailscale/tailscaled.sock'); i++) system('sleep 1');
 			}
 			const st = ts_json('status --json');
-			const au = `--auto-update=${req.args.auto_update === false ? 'false' : 'true'}`;
 			if (st?.BackendState == 'Running') {
-				const out = sh(`${TS} set ${flags} ${au} 2>&1`);
+				const out = sh(`${TS} set ${flags} 2>&1`);
 				return length(out) ? { error: out } : {};
 			}
-			system(`sh -c ${q(`${TS} up --reset ${flags} --timeout=600s && ${TS} set ${au}`)} </dev/null >/tmp/er4-tailscale-up.log 2>&1 &`);
+			system(`sh -c ${q(`${TS} up --reset ${flags} --timeout=600s`)} </dev/null >/tmp/er4-tailscale-up.log 2>&1 &`);
 			return {};
 		}
 	},

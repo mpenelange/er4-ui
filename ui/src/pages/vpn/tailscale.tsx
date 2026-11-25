@@ -1,8 +1,8 @@
-// Tailscale on the VPN page. Set up (staged firewall/network, Tailscale's own build downloaded
-// onto the eMMC, the service started), log in through Tailscale's own page, then: share home networks (subnet routes), offer the router as an
+// Tailscale on the VPN page. Set up (staged firewall/network, OpenWrt's tailscale package installed
+// with apk, the service started), log in through Tailscale's own page, then: share home networks (subnet routes), offer the router as an
 // exit node, use other nodes' routes. Routes and the exit node also need approval in the
-// Tailscale admin console; until then they show as waiting. Tailscale updates itself (its own
-// updater, release signature checked) unless "Update automatically" is off.
+// Tailscale admin console; until then they show as waiting. Updates come from the OpenWrt package
+// repository (Update now), not Tailscale's own updater.
 import { useEffect, useState } from 'preact/hooks'
 import { usePoll } from '../../api/store'
 import { ensureExitForwarding, stageTailscale, tailscale, tsNetwork, unstageTailscale, type TsNode, type TsSettings, type TsStatus } from '../../api/tailscale'
@@ -35,8 +35,8 @@ export function TailscaleCard({ data }: { data: VpnData }) {
   const settings: TsSettings = { routes: st.prefs?.routes.filter((r) => r !== '0.0.0.0/0' && r !== '::/0') ?? [], exit_node: !!st.prefs?.exit_node, accept_routes: !!st.prefs?.accept_routes,
     auto_update: st.prefs ? st.prefs.auto_update : true }
   const dl = st.installed ? undefined : (st.install?.state === 'error' ? 'error' : st.install?.state === 'downloading' || pendingUp ? 'downloading' : 'none') as Download
-  const dlError = st.install?.state === 'error' ? st.install.message ?? 'download failed' : undefined
-  // download first if needed; log in when it's there
+  const dlError = st.install?.state === 'error' ? st.install.message ?? 'install failed' : undefined
+  // install first if needed; log in when it's there
   const start = async (s: TsSettings) => {
     if (st.installed) return tailscale.up(s)
     setPendingUp(s)
@@ -76,15 +76,14 @@ export function TailscaleCard({ data }: { data: VpnData }) {
 
 type Download = 'none' | 'downloading' | 'error'
 
-/** Tailscale isn't on the router yet: the image doesn't carry it, the router downloads Tailscale's
- *  own build (about 36 MB) from pkgs.tailscale.com. */
+/** Tailscale isn't on the router yet: the router installs OpenWrt's tailscale package (apk). */
 function Download({ dl, error, busy, onStart }: { dl: Download; error?: string; busy: boolean; onStart: () => void }) {
-  if (dl === 'downloading') return <div class="row"><Badge status="accent">downloading</Badge><span class="secondary">Downloading Tailscale from pkgs.tailscale.com (about 36 MB)…</span></div>
+  if (dl === 'downloading') return <div class="row"><Badge status="accent">installing</Badge><span class="secondary">Installing OpenWrt's tailscale package…</span></div>
   return (
     <div class="row">
-      {dl === 'error' ? <span class="warn-line">Couldn't download Tailscale: {error}</span> : <span class="secondary">Tailscale isn't on this router yet. It's downloaded from pkgs.tailscale.com (about 36 MB) and kept on the eMMC.</span>}
+      {dl === 'error' ? <span class="warn-line">Couldn't install Tailscale: {error}</span> : <span class="secondary">Tailscale isn't on this router yet. It's installed from the OpenWrt package repository.</span>}
       <span style={{ flex: 1 }} />
-      <Button variant="primary" disabled={busy} onClick={onStart}>{dl === 'error' ? 'Try again' : 'Download'}</Button>
+      <Button variant="primary" disabled={busy} onClick={onStart}>{dl === 'error' ? 'Try again' : 'Install'}</Button>
     </div>
   )
 }
@@ -102,8 +101,8 @@ function SetUp({ data, busy, dl, dlError, onSetUp }: { data: VpnData; busy: bool
         <Button variant="primary" disabled={busy || dl === 'downloading'} onClick={() => onSetUp(reach)}>Set up Tailscale</Button>
       </div>
       {dl === 'downloading' && <Download dl={dl} busy={busy} onStart={() => {}} />}
-      {dl === 'error' && <span class="warn-line">Couldn't download Tailscale: {dlError}</span>}
-      {dl === 'none' && <span class="muted small">Downloads Tailscale's own build (about 36 MB) onto the eMMC; it keeps itself up to date.</span>}
+      {dl === 'error' && <span class="warn-line">Couldn't install Tailscale: {dlError}</span>}
+      {dl === 'none' && <span class="muted small">Installs OpenWrt's tailscale package; updates come from the package repository.</span>}
     </div>
   )
 }
@@ -138,10 +137,6 @@ function Connected({ st, data, settings, busy, run }: { st: TsStatus; data: VpnD
           {st.updating
             ? <span title={st.update_log ?? undefined}><Badge status="accent">updating…</Badge></span>
             : st.latest && <><Badge status="warning">{st.latest} available</Badge><Button disabled={busy} onClick={() => run(tailscale.update)}>Update now</Button></>}
-        </span>
-        <span>Update automatically</span>
-        <span class="row" title="Tailscale installs new releases itself (it checks Tailscale's release signature) and restarts, which drops connections for a few seconds">
-          <Toggle on={settings.auto_update} label="Update Tailscale automatically" onChange={(auto_update) => save({ auto_update })} />
         </span>
       </div>
       {waiting.length > 0 && (

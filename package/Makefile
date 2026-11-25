@@ -3,12 +3,13 @@
 # served by uhttpd at /er4/ next to LuCI, plus the "er4" rpcd plugin and its ACL.
 # rpcd-mod-luci (luci-rpc: leases, host hints) and cgi-io (uploads, backup download) are the LuCI
 # backends it uses; LuCI itself isn't needed. wireguard-tools for the VPN page, tcpdump-mini for
-# packet captures.
+# packet captures. Tailscale, strongSwan and acme.sh are installed on request from their pages
+# (er4.pkg_install). files/er4-https and its acme hotplug point uhttpd at the issued certificate.
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=er4-ui
-PKG_VERSION:=0.2.0
-PKG_RELEASE:=1
+PKG_VERSION:=0.3.0
+PKG_RELEASE:=2
 PKG_LICENSE:=GPL-2.0-only
 
 ER4_UI_DIST ?= $(CURDIR)/../ui/dist
@@ -50,6 +51,9 @@ define Package/er4-ui/install
 	$(INSTALL_BIN) ./files/er4-statsmon $(1)/usr/libexec/er4-statsmon
 	$(INSTALL_BIN) ./files/er4-statsmon.init $(1)/etc/init.d/er4-statsmon
 	$(INSTALL_DATA) ./files/90-er4-wan.hotplug $(1)/etc/hotplug.d/iface/90-er4-wan
+	$(INSTALL_BIN) ./files/er4-https $(1)/usr/libexec/er4-https
+	$(INSTALL_DIR) $(1)/etc/hotplug.d/acme
+	$(INSTALL_DATA) ./files/90-er4-https.hotplug $(1)/etc/hotplug.d/acme/90-er4-https
 endef
 
 # rpcd loads plugins and ACLs when it starts: restart it so the "er4" object appears (or goes).
