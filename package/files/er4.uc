@@ -306,17 +306,22 @@ function cron_line_ok(l) {
 }
 
 // ---- optional features' packages (er4.packages / er4.pkg_install / er4.pkg_upgrade) -----------
-// The official OpenWrt packages behind Tailscale, IPsec and the HTTPS certificate, installed and
+// The official OpenWrt packages behind WireGuard, Tailscale, IPsec, the HTTPS certificate and packet
+// capture, installed and
 // upgraded with apk on request. One job at a time, in the background (apk update runs first);
 // the cards poll er4.packages for progress.
 const PKG_SETS = {
+	// wg, netifd's wireguard protocol and (through it) kmod-wireguard
+	wireguard: [ 'wireguard-tools' ],
 	tailscale: [ 'tailscale' ],
 	ipsec: [ 'strongswan-default', 'strongswan-pki', 'strongswan-mod-eap-identity', 'strongswan-mod-eap-mschapv2',
 		'strongswan-mod-openssl', 'xfrm', 'kmod-xfrm-interface' ],
-	acme: [ 'acme-acmesh', 'acme-acmesh-dnsapi' ]
+	acme: [ 'acme-acmesh', 'acme-acmesh-dnsapi' ],
+	capture: [ 'tcpdump-mini' ]
 };
 // what says a feature is installed (the same files its status method checks)
-const PKG_PROBE = { tailscale: '/usr/sbin/tailscale', ipsec: '/usr/sbin/swanctl', acme: '/usr/lib/acme/client/dnsapi/dns_cf.sh' };
+const PKG_PROBE = { wireguard: '/usr/bin/wg', tailscale: '/usr/sbin/tailscale', ipsec: '/usr/sbin/swanctl',
+	acme: '/usr/lib/acme/client/dnsapi/dns_cf.sh', capture: '/usr/bin/tcpdump' };
 const PKG_JOB = '/tmp/er4-pkg';      // .what (JSON: action, feature, packages), .pid, .log, .rc
 const PKG_UPLOAD = '/tmp/er4-upload.apk';
 // -> {action, feature, packages, running, rc (null while running), ok, log: last lines} | null before
@@ -540,7 +545,7 @@ const methods = {
 		}
 	},
 
-	// -> {tailscale, ipsec, acme: installed?, job: the current or last package job (see pkg_job)}
+	// -> {wireguard, tailscale, ipsec, acme, capture: installed?, job: the current or last package job (see pkg_job)}
 	packages: {
 		call: function() {
 			const r = { job: pkg_job() };
@@ -549,7 +554,7 @@ const methods = {
 		}
 	},
 
-	// {feature: tailscale|ipsec|acme} -> {} | {error}: apk add / apk upgrade its packages, in the
+	// {feature: wireguard|tailscale|ipsec|acme|capture} -> {} | {error}: apk add / apk upgrade its packages, in the
 	// background; progress in packages.job
 	pkg_install: {
 		args: { feature: '' },
@@ -1121,6 +1126,7 @@ const methods = {
 		args: { iface: 'iface', filter: 'filter', seconds: 30, packets: 10000 },
 		call: function(req) {
 			const a = req.args;
+			if (!access('/usr/bin/tcpdump')) return { error: 'tcpdump is not installed' };
 			if (cap_running()) return { error: 'a capture is already running' };
 			if (type(a.iface) != 'string' || !match(a.iface, /^[A-Za-z0-9._-]{1,15}$/) || (a.iface != 'any' && !access(`/sys/class/net/${a.iface}`)))
 				return { error: 'no such interface' };

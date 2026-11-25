@@ -4,6 +4,7 @@
 //   routes  routing tables (main, or every table) and the neighbour table, per family
 //   connections  the conntrack table: who talks to whom, NAT, state, traffic
 //   wan     WAN health: RTT and loss to the gateway and the internet over time, up/down events
+import { InstallFeature, useInstall } from '../../components/install'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'preact/hooks'
 import type { PageProps } from '../../app'
 import { router } from '../../api/router'
@@ -253,6 +254,7 @@ function Tools() {
 
 /** tcpdump on the router into a .pcap for Wireshark; bounded by time, packets and 20 MB. */
 function Capture() {
+  const pkg = useInstall('capture')
   const ifaces = useAsync(() => router.interfaces().catch(() => []), [], [])
   const devs = [...new Set(['lan0', 'lan1', 'lan2', 'lan3', ...(ifaces.data ?? []).map((i) => i.l3_device).filter((x): x is string => !!x)])].sort()
   const [iface, setIface] = useState('lan0')
@@ -285,6 +287,9 @@ function Capture() {
   }
   const running = !!st?.running
   const stamp = () => new Date().toISOString().slice(0, 16).replace(/[-:T]/g, '')
+  if (pkg.installed === false) return (
+    <Card title="Packet capture"><InstallFeature feature="capture" what="tcpdump (tcpdump-mini, about 450 KB)" /></Card>
+  )
   return (
     <Card title="Packet capture" actions={running ? <Badge status="accent">capturing · {bytes(st!.size)}</Badge> : st && st.size > 24 ? <Badge>{bytes(st.size)}</Badge> : null}>
       <form class="tool-form" onSubmit={(e) => { e.preventDefault(); start() }}>

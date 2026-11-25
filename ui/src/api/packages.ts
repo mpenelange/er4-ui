@@ -1,10 +1,11 @@
-// The official packages behind optional features (Tailscale, IPsec, the HTTPS certificate),
+// The official packages behind optional features (WireGuard, Tailscale, IPsec, the HTTPS
+// certificate, packet capture),
 // installed and upgraded with apk by the router in the background:
 //   er4.packages                              -> Packages
 //   er4.pkg_install / pkg_upgrade {feature}   -> {} | {error}
 import { api } from './client'
 
-export type Feature = 'tailscale' | 'ipsec' | 'acme'
+export type Feature = 'wireguard' | 'tailscale' | 'ipsec' | 'acme' | 'capture'
 /** ok: apk succeeded (its exit code alone can't tell when an older package is left broken) */
 export interface PkgJob { action: 'install' | 'upgrade'; feature: Feature; running: boolean; rc: number | null; ok: boolean; log: string[] }
 export type Packages = Record<Feature, boolean> & { job: PkgJob | null }

@@ -2,7 +2,8 @@
 //   network:  interface wg0 (proto wireguard, private key, listen port, tunnel address)
 //   firewall: zone 'vpn' (or wg0 added to an existing one), forwardings vpn -> chosen zones
 //             (+ vpn -> wan for full-tunnel devices), rule "Allow-WireGuard" on wan UDP port
-import { useState } from 'preact/hooks'
+import { useEffect, useState } from 'preact/hooks'
+import { useInstall } from '../../components/install'
 import { uci } from '../../api/uci'
 import { forwardings, zones as zonesOf } from '../../api/firewall'
 import { cidr, cidrStr, interfaceSubnets } from '../../api/ip4'
@@ -24,6 +25,9 @@ export function Setup({ data, onDone }: { data: VpnData; onDone?: (iface: string
   const [internet, setInternet] = useState(true)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<unknown>()
+  // "Set up WireGuard" before wireguard-tools was there: set up once it's installed
+  const [pending, setPending] = useState(false)
+  const pkg = useInstall('wireguard')
 
   const portOk = /^\d{1,5}$/.test(port) && +port > 0 && +port < 65536
   const c = cidr(address)
@@ -31,6 +35,15 @@ export function Setup({ data, onDone }: { data: VpnData; onDone?: (iface: string
   const clash = c && Object.entries(subnets).find(([, s]) => cidrStr(s) === cidrStr(c))
   const name = freeWgName(data.net)
   const portClash = usedPorts.includes(port)
+
+  useEffect(() => {
+    if (pending && pkg.installed) { setPending(false); create() }
+  }, [pending, pkg.installed])
+  const setUp = () => {
+    if (pkg.installed !== false) return create()
+    setPending(true)
+    pkg.start().catch(() => setPending(false))
+  }
 
   const create = async () => {
     setBusy(true)
@@ -55,8 +68,9 @@ export function Setup({ data, onDone }: { data: VpnData; onDone?: (iface: string
   return (
     <VpnSetupCard title="WireGuard" name="WireGuard"
       intro="Phones and laptops connect to this router over an encrypted tunnel (the WireGuard app), then use your home network, and your home internet if you like, as if they were here."
-      zones={inside} reach={reach} onReach={setReach} busy={busy} disabled={!portOk || portClash || !addrOk || !!clash} onSetUp={create} error={error}
-      note={<>Stages interface {name}, firewall zone <b>vpn</b> and a rule allowing UDP {port} from {wan?.name ?? 'wan'}. Nothing changes until you apply.</>}>
+      zones={inside} reach={reach} onReach={setReach} busy={busy} disabled={!portOk || portClash || !addrOk || !!clash} onSetUp={setUp}
+      installing={pkg.running || (pending && !pkg.installed) ? pkg.last ?? '' : undefined} failedLog={pkg.failed ? pkg.log : undefined} error={error ?? pkg.error}
+      note={<>{pkg.installed === false && <>Installs wireguard-tools from the OpenWrt package repository first. </>}Stages interface {name}, firewall zone <b>vpn</b> and a rule allowing UDP {port} from {wan?.name ?? 'wan'}. Nothing changes until you apply.</>}>
       <details class="vpn-setup-options" open={!portOk || portClash || !addrOk || !!clash}>
         <summary><span class="muted small">Options</span> <span class="mono small">UDP {port} · {address} · {internet ? 'full tunnel' : 'home network only'}</span></summary>
       <div class="vpn-setup-grid">

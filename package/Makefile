@@ -2,13 +2,13 @@
 # er4 web UI for stock OpenWrt: the app from ../ui (build it first: cd ui && npm ci && npm run build),
 # served by uhttpd at /er4/ next to LuCI, plus the "er4" rpcd plugin and its ACL.
 # rpcd-mod-luci (luci-rpc: leases, host hints) and cgi-io (uploads, backup download) are the LuCI
-# backends it uses; LuCI itself isn't needed. wireguard-tools for the VPN page, tcpdump-mini for
-# packet captures. Tailscale, strongSwan and acme.sh are installed on request from their pages
-# (er4.pkg_install). files/er4-https and its acme hotplug point uhttpd at the issued certificate.
+# backends it uses; LuCI itself isn't needed. ip-tiny: the routes view reads `ip -j` (busybox's ip
+# has no JSON output). Everything optional (wireguard-tools, Tailscale,
+# strongSwan, acme.sh, tcpdump-mini) is installed on request from its page (er4.pkg_install). files/er4-https and its acme hotplug point uhttpd at the issued certificate.
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=er4-ui
-PKG_VERSION:=0.4.0
+PKG_VERSION:=0.5.0
 PKG_RELEASE:=2
 PKG_LICENSE:=GPL-2.0-only
 
@@ -21,7 +21,7 @@ define Package/er4-ui
   CATEGORY:=Utilities
   TITLE:=er4 web UI
   DEPENDS:=+rpcd +rpcd-mod-ucode +rpcd-mod-luci +cgi-io +ucode-mod-fs +ucode-mod-uci \
-    +uhttpd +uhttpd-mod-ubus +wireguard-tools +tcpdump-mini
+    +uhttpd +uhttpd-mod-ubus +ip-tiny
   PKGARCH:=all
 endef
 

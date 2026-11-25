@@ -286,7 +286,7 @@ registerMock('er4', {
     const done = Object.keys(featureAt).sort((a, b) => featureAt[b] - featureAt[a])[0]
     const job = f ? { action: 'install', feature: f[0], packages: [], running: true, rc: null, ok: false, log: [`(${Math.ceil((Date.now() - f[1]) / 500)}/9) Installing strongswan-mod-…`] }
       : done ? { action: 'install', feature: done, packages: [], running: false, rc: 1, ok: true, log: ['1 error; 22.3 MiB in 236 packages'] } : null
-    return { tailscale: featureInstalled('tailscale'), ipsec: featureInstalled('ipsec'), acme: featureInstalled('acme'), job }
+    return { wireguard: featureInstalled('wireguard'), tailscale: featureInstalled('tailscale'), ipsec: featureInstalled('ipsec'), acme: featureInstalled('acme'), capture: featureInstalled('capture'), job }
   },
   pkg_install: ({ feature }) => { featureAt[String(feature)] ??= Date.now(); return {} },
   pkg_upgrade: () => ({}),
