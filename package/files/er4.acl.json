@@ -24,7 +24,11 @@
 					"firmware_info",
 					"tailscale_status",
 					"ipsec_status",
-					"acme_status"
+					"acme_status",
+					"pkg_list",
+					"pkg_search",
+					"pkg_info",
+					"pkg_job"
 				],
 				"luci-rpc": [
 					"getDHCPLeases",
@@ -112,7 +116,8 @@
 					"ipsec_cert",
 					"acme_setup",
 					"acme_renew",
-					"acme_off"
+					"acme_off",
+					"pkg_action"
 				],
 				"network.interface.*": [
 					"up",
@@ -139,6 +144,9 @@
 					"write"
 				],
 				"/tmp/backup.tar.gz": [
+					"write"
+				],
+				"/tmp/er4-upload.apk": [
 					"write"
 				]
 			}

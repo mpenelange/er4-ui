@@ -1,4 +1,4 @@
-// System: #/system[/general|admin|ssh|services|cron|offload|firmware|maintenance]
+// System: #/system[/general|admin|ssh|services|cron|offload|software|firmware|maintenance]
 import { useState } from 'preact/hooks'
 import type { PageProps } from '../../app'
 import { router } from '../../api/router'
@@ -16,6 +16,7 @@ import { Firmware } from './firmware'
 import { General } from './general'
 import { Maintenance } from './maintenance'
 import { Offload } from './offload'
+import { Software } from './software'
 import { FEATURES } from '../../features'
 import './system.css'
 
@@ -26,6 +27,7 @@ const TABS = [
   { id: 'services', label: 'Services' },
   { id: 'cron', label: 'Scheduled tasks' },
   { id: 'offload', label: 'Hardware offload' },
+  { id: 'software', label: 'Software' },
   { id: 'firmware', label: 'Firmware' },
   { id: 'maintenance', label: 'Backup & reboot' },
 ] as const
@@ -57,6 +59,7 @@ export default function System({ path }: PageProps) {
       {tab === 'services' && <Services />}
       {tab === 'cron' && <Cron />}
       {tab === 'offload' && <Offload />}
+      {tab === 'software' && <Software />}
       {tab === 'firmware' && <Firmware />}
       {tab === 'maintenance' && <Maintenance />}
     </div>

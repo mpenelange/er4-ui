@@ -125,3 +125,6 @@
 .cron-read { margin: 0; padding-left: 1.2em; font-size: var(--fs-sm); color: var(--text-secondary); }
 .cron-read li.error { color: var(--critical); }
 .acme-log { margin: var(--sp-2) 0 0; max-height: 220px; overflow: auto; font-size: var(--fs-xs); line-height: 1.5; white-space: pre-wrap; word-break: break-all; color: var(--text-secondary); }
+
+/* Software: one-line descriptions in the package tables */
+.ellipsis { display: inline-block; max-width: 52ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: bottom; }

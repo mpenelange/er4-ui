@@ -317,11 +317,15 @@ const PKG_SETS = {
 };
 // what says a feature is installed (the same files its status method checks)
 const PKG_PROBE = { tailscale: '/usr/sbin/tailscale', ipsec: '/usr/sbin/swanctl', acme: '/usr/lib/acme/client/dnsapi/dns_cf.sh' };
-const PKG_JOB = '/tmp/er4-pkg';      // .what ("install tailscale"), .pid, .log, .rc
-// -> {action, feature, running, rc (null while running), ok, log: last lines} | null before the first job
-function pkg_job() {
-	const what = match(trim(readfile(`${PKG_JOB}.what`) ?? ''), /^(\S+) (\S+)$/);
-	if (!what) return null;
+const PKG_JOB = '/tmp/er4-pkg';      // .what (JSON: action, feature, packages), .pid, .log, .rc
+const PKG_UPLOAD = '/tmp/er4-upload.apk';
+// -> {action, feature, packages, running, rc (null while running), ok, log: last lines} | null before
+// the first job. action: install|upgrade (a feature's set), add|del|upgrade (packages), upgrade-all,
+// update (refresh the lists), add-file (the uploaded .apk)
+function pkg_job(lines) {
+	let what = null;
+	try { what = json(readfile(`${PKG_JOB}.what`) ?? 'null'); } catch (e) {}
+	if (type(what) != 'object') return null;
 	const pid = trim(readfile(`${PKG_JOB}.pid`) ?? '');
 	const rc = readfile(`${PKG_JOB}.rc`);
 	const log = filter(split(trim(readfile(`${PKG_JOB}.log`) ?? ''), '\n'), length);
@@ -335,12 +339,26 @@ function pkg_job() {
 	const code = rc == null ? null : +trim(rc);
 	const ok = code == 0 || (code != null && !length(filter(log, (l) => match(l, /^ERROR/)))
 		&& match(log[length(log) - 1] ?? '', /^[0-9]+ errors?; /) != null);
-	return { action: what[1], feature: what[2], running, rc: code, ok, log: slice(log, -8) };
+	return { action: what.action, feature: what.feature ?? null, packages: what.packages ?? [], running, rc: code, ok,
+		log: slice(log, -(lines ?? 8)) };
+}
+// Start `cmd` as the package job (one at a time), described by `what` in pkg_job's reply
+function pkg_run(what, cmd) {
+	if (pkg_job()?.running) return { error: 'another package job is still running' };
+	unlink(`${PKG_JOB}.rc`);
+	unlink(`${PKG_JOB}.pid`);
+	writefile(`${PKG_JOB}.what`, sprintf('%J', what));
+	system(`sh -c ${q(`echo $$ > ${PKG_JOB}.pid; ( ${cmd} ) > ${PKG_JOB}.log 2>&1; echo $? > ${PKG_JOB}.rc`)} </dev/null >/dev/null 2>&1 &`);
+	return {};
+}
+// package names as apk takes them, optionally pinned to a version (name=1.2.3-r1)
+function pkg_names_ok(l) {
+	return type(l) == 'array' && length(l) > 0 && length(l) <= 32 &&
+		!length(filter(l, (n) => type(n) != 'string' || !match(n, /^[A-Za-z0-9][A-Za-z0-9._+-]*(=[A-Za-z0-9._+~-]+)?$/)));
 }
 function pkg_start(action, feature) {
 	const set = PKG_SETS[feature];
 	if (!set || (action != 'install' && action != 'upgrade')) return { error: 'unknown feature' };
-	if (pkg_job()?.running) return { error: 'another package job is still running' };
 	let cmd = `apk update && apk ${action == 'install' ? 'add' : 'upgrade'} ${join(' ', set)}`;
 	// strongSwan's packages enable and start charon (UDP 500/4500) with nothing set up: off until
 	// the VPN page saves the first remote (it enables swanctl then)
@@ -348,16 +366,38 @@ function pkg_start(action, feature) {
 		cmd += ' && { uci -q show ipsec | grep -q "=remote$" || { /etc/init.d/swanctl stop; /etc/init.d/swanctl disable; }; }';
 	if (feature == 'tailscale' && action == 'upgrade')
 		cmd += ' && { /etc/init.d/tailscale enabled && /etc/init.d/tailscale restart; true; }';
-	unlink(`${PKG_JOB}.rc`);
-	unlink(`${PKG_JOB}.pid`);
-	writefile(`${PKG_JOB}.what`, `${action} ${feature}`);
-	system(`sh -c ${q(`echo $$ > ${PKG_JOB}.pid; ( ${cmd} ) > ${PKG_JOB}.log 2>&1; echo $? > ${PKG_JOB}.rc`)} </dev/null >/dev/null 2>&1 &`);
-	return {};
+	return pkg_run({ action, feature, packages: set }, cmd);
 }
-// the newer version apk offers for a package, or null ("name-1.2.3-r1 arch {...} [upgradable from: ...]")
-function pkg_upgradable(name) {
-	const m = match(sh(`apk list -u ${q(name)} 2>/dev/null`), regexp(`^${name}-([0-9][^ ]*) `));
-	return m ? m[1] : null;
+// apk query's JSON, or null
+function apk_query(args) {
+	const out = sh(`apk query --format json ${args} 2>/dev/null`);
+	if (!length(out)) return null;
+	try { return json(out); } catch (e) { return null; }
+}
+// names in /etc/apk/world: what was asked for, as opposed to pulled in as a dependency
+function apk_world() {
+	const w = {};
+	for (let l in split(readfile('/etc/apk/world') ?? '', '\n')) {
+		const m = match(trim(l), /^([^=<>~ ]+)/);
+		if (m) w[m[1]] = true;
+	}
+	return w;
+}
+// {name: new version} from `apk list -u` ("name-1.2-r1 arch {origin} (lic) [upgradable from: name-1.1-r1]")
+// "name-version": the version starts at the last "-" that leaves a version ("6.12.112-r1",
+// "1718~981c978eff"), so "kmod-nft-offload-6.12.112-r2" is kmod-nft-offload at 6.12.112-r2
+function apk_split(nv) {
+	const m = match(nv, /^(.+)-([0-9][^-]*(-r[0-9]+)?)$/);
+	return m ? [ m[1], m[2] ] : null;
+}
+function apk_upgradable() {
+	const u = {};
+	for (let l in split(sh('apk list -u 2>/dev/null'), '\n')) {
+		const m = match(l, /^(\S+) .*\[upgradable from: (\S+)\]/);
+		const n = m && apk_split(m[1]);
+		if (n) u[n[0]] = n[1];
+	}
+	return u;
 }
 
 // ---- Tailscale (er4.tailscale_*) -------------------------------------------------------------
@@ -518,6 +558,93 @@ const methods = {
 	pkg_upgrade: {
 		args: { feature: '' },
 		call: function(req) { return pkg_start('upgrade', req.args.feature); }
+	},
+
+	// ---- software: apk ---------------------------------------------------------------------
+	// -> {packages: [{name, version, description, size, world, upgrade}], updated: mtime of the
+	// lists, job}. world: asked for (in /etc/apk/world), not just a dependency; upgrade: newer version
+	pkg_list: {
+		call: function() {
+			const world = apk_world(), up = apk_upgradable();
+			const pk = map(apk_query('--fields name,version,description,installed-size --installed "*"') ?? [], (p) => ({
+				name: p.name, version: p.version, description: p.description, size: p['installed-size'] ?? 0,
+				world: !!world[p.name], upgrade: up[p.name] ?? null
+			}));
+			let updated = 0;
+			for (let f in lsdir('/tmp/apk-cache') ?? []) updated = max(updated, stat(`/tmp/apk-cache/${f}`)?.mtime ?? 0);
+			for (let f in lsdir('/var/cache/apk') ?? []) updated = max(updated, stat(`/var/cache/apk/${f}`)?.mtime ?? 0);
+			return { packages: pk, updated, job: pkg_job() };
+		}
+	},
+
+	// {query} -> {packages: [{name, version, description, size, installed}], more: bool}: available
+	// packages whose name or description matches (at most 200, names first)
+	pkg_search: {
+		args: { query: '' },
+		call: function(req) {
+			const qs = trim(req.args.query ?? '');
+			if (length(qs) < 2 || !match(qs, /^[A-Za-z0-9._+ -]+$/)) return { packages: [], more: false };
+			const inst = {};
+			for (let p in apk_query('--fields name,version --installed "*"') ?? []) inst[p.name] = p.version;
+			const all = apk_query(`--fields name,version,description,file-size --available --match name,description ${q(`*${qs}*`)}`) ?? [];
+			const l = lc(qs);
+			const rank = (p) => (lc(p.name) == l ? 0 : index(lc(p.name), l) >= 0 ? 1 : 2);
+			const seen = {}, out = [];
+			for (let p in sort(all, (a, b) => rank(a) - rank(b) || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))) {
+				if (seen[p.name]) continue;
+				seen[p.name] = true;
+				push(out, { name: p.name, version: p.version, description: p.description, size: p['file-size'] ?? 0, installed: inst[p.name] ?? null });
+			}
+			return { packages: slice(out, 0, 200), more: length(out) > 200 };
+		}
+	},
+
+	// {name} -> {name, version, description, url, license, size, download, depends, required_by,
+	// installed, world} | {error}. required_by: installed packages that depend on it
+	pkg_info: {
+		args: { name: '' },
+		call: function(req) {
+			const n = req.args.name;
+			if (!pkg_names_ok([ n ])) return { error: 'bad name' };
+			const p = apk_query(`--fields name,version,description,url,license,installed-size,file-size,depends --match name ${q(n)}`)?.[0];
+			if (!p) return { error: 'no such package' };
+			const i = apk_query(`--fields name,version,reverse-depends --installed --match name ${q(n)}`)?.[0];
+			return { name: p.name, version: p.version, description: p.description, url: p.url, license: p.license,
+				size: p['installed-size'] ?? 0, download: p['file-size'] ?? 0, depends: p.depends ?? [],
+				required_by: i?.['reverse-depends'] ?? [], installed: i?.version ?? null, world: !!apk_world()[n] };
+		}
+	},
+
+	// {action: add|del|upgrade|upgrade-all|update|add-file, packages?: [name]} -> {} | {error}: the
+	// package job (progress in pkg_list.job / packages.job). add-file installs the uploaded .apk
+	// (PKG_UPLOAD, unsigned: --allow-untrusted). add and upgrade refresh the lists first.
+	pkg_action: {
+		args: { action: '', packages: [] },
+		call: function(req) {
+			const a = req.args.action, l = req.args.packages ?? [];
+			const names = () => join(' ', map(l, q));
+			switch (a) {
+			case 'add':
+			case 'upgrade':
+			case 'del':
+				if (!pkg_names_ok(l)) return { error: 'bad package names' };
+				return pkg_run({ action: a, packages: l }, a == 'del' ? `apk del ${names()}` : `apk update && apk ${a} ${names()}`);
+			case 'upgrade-all':
+				return pkg_run({ action: a, packages: [] }, 'apk update && apk upgrade');
+			case 'update':
+				return pkg_run({ action: a, packages: [] }, 'apk update');
+			case 'add-file':
+				if (!stat(PKG_UPLOAD)) return { error: 'no package uploaded' };
+				return pkg_run({ action: a, packages: [] }, `apk add --allow-untrusted ${PKG_UPLOAD}; rc=$?; rm -f ${PKG_UPLOAD}; exit $rc`);
+			}
+			return { error: 'unknown action' };
+		}
+	},
+
+	// {lines} -> the package job with more of its log (the Software page's log view)
+	pkg_job: {
+		args: { lines: 200 },
+		call: function(req) { return pkg_job(min(int(req.args.lines ?? 200), 2000)) ?? {}; }
 	},
 
 	// ---- firmware: OpenWrt's sysupgrade -----------------------------------------------------

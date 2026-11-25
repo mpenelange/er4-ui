@@ -239,11 +239,66 @@ const acmeLog = (a: NonNullable<typeof acme>, t: number) => {
     `${at(3)} daemon.err acme-acmesh: Error add txt for domain:_acme-challenge.${a.domain}`, `${at(3)} daemon.err acme: State moved to /etc/acme/${a.domain}_ecc.failed-${a.since + 3}`]
   return t < 6 ? l : [...l, `${at(5)} daemon.info acme-acmesh: Success`, `${at(6)} daemon.info acme-acmesh: Cert success.`]
 }
-// optional features' packages: all installed in the mock
+// optional features' packages (all installed in the mock) and the Software page
+type MockPkg = { name: string; version: string; description: string; size: number; world: boolean; upgrade: string | null }
+const mockPkgs: MockPkg[] = [
+  ['base-files', '1718~981c978eff', 'This package contains a base filesystem and system scripts for OpenWrt.', 49492, true, null],
+  ['busybox', '1.37.0-r6', 'The Swiss Army Knife of embedded Linux.', 512000, true, null],
+  ['dnsmasq', '2.91-r1', 'A lightweight DNS and DHCP server.', 302000, true, '2.91-r2'],
+  ['er4-ui', '0.3.0-r2', 'Dense single-page admin UI (Preact app at /er4/) and the rpcd plugin "er4".', 647755, true, null],
+  ['kmod-octeon-offload', '6.12.112-r5', 'Forwards established flows in the Octeon ethernet driver\'s receive path.', 32792, true, null],
+  ['libpcap1', '1.10.6-r1', 'This package contains the libpcap shared library.', 232000, false, null],
+  ['tcpdump-mini', '4.99.6-r1', 'Network monitoring and data acquisition tool (minimal version)', 454929, true, null],
+  ['wireguard-tools', '1.0.20260223-r1', 'WireGuard is a novel VPN that runs inside the Linux Kernel.', 120000, true, null],
+].map(([name, version, description, size, world, upgrade]) => ({ name, version, description, size, world, upgrade }) as MockPkg)
+const mockRepo = [
+  ['htop', '3.4.1-r1', 'Htop is an ncursed-based process viewer similar to top, but it allows to scroll the list vertically and horizontally.', 98000],
+  ['iperf3', '3.19-r1', 'Iperf is a modern alternative for measuring TCP and UDP bandwidth performance.', 41000],
+  ['luci-app-sqm', '26.326.69129~cb87fe6', 'Control the simple_qos SQM script', 9000],
+  ['sqm-scripts', '1.6.0-r1', 'A queue setup script for traffic shaping.', 22000],
+  ['tcpdump', '4.99.6-r1', 'Network monitoring and data acquisition tool', 330000],
+] as const
+let mockJob: { action: string; feature: string | null; packages: string[]; running: boolean; rc: number | null; ok: boolean; log: string[] } | null = null
+function startJob(action: string, packages: string[]) {
+  if (mockJob?.running) return { error: 'another package job is still running' }
+  mockJob = { action, feature: null, packages, running: true, rc: null, ok: false, log: ['fetch https://downloads.openwrt.org/releases/25.12.6/…/packages.adb'] }
+  const j = mockJob
+  setTimeout(() => {
+    j.running = false; j.rc = 0; j.ok = true
+    j.log.push(...packages.map((p, i) => `(${i + 1}/${packages.length}) ${action === 'del' ? 'Purging' : 'Installing'} ${p}`), 'OK: 13.7 MiB in 158 packages')
+    for (const p of packages) {
+      const i = mockPkgs.findIndex((x) => x.name === p)
+      const r = mockRepo.find((x) => x[0] === p)
+      if (action === 'del' && i >= 0) mockPkgs.splice(i, 1)
+      else if (action === 'add' && i < 0 && r) mockPkgs.push({ name: r[0], version: r[1], description: r[2], size: r[3] * 2, world: true, upgrade: null })
+      else if (action === 'upgrade' && i >= 0 && mockPkgs[i].upgrade) mockPkgs[i] = { ...mockPkgs[i], version: mockPkgs[i].upgrade!, upgrade: null }
+    }
+    if (action === 'upgrade-all') for (const p of mockPkgs) if (p.upgrade) { p.version = p.upgrade; p.upgrade = null }
+  }, 2500)
+  return {}
+}
 registerMock('er4', {
   packages: () => ({ tailscale: true, ipsec: true, acme: true, job: null }),
   pkg_install: () => ({}),
   pkg_upgrade: () => ({}),
+  pkg_list: () => ({ packages: mockPkgs.map((p) => ({ ...p })), updated: now() - 3600, job: mockJob }),
+  pkg_search: ({ query }) => {
+    const q = String(query ?? '').toLowerCase()
+    if (q.length < 2) return { packages: [], more: false }
+    const all = [...mockRepo.map(([name, version, description, size]) => ({ name, version, description, size })), ...mockPkgs.map((p) => ({ name: p.name, version: p.upgrade ?? p.version, description: p.description, size: p.size / 2 }))]
+    return { packages: all.filter((p) => p.name.includes(q) || p.description.toLowerCase().includes(q))
+      .map((p) => ({ ...p, installed: mockPkgs.find((x) => x.name === p.name)?.version ?? null })), more: false }
+  },
+  pkg_info: ({ name }) => {
+    const i = mockPkgs.find((x) => x.name === name)
+    const r = mockRepo.find((x) => x[0] === name)
+    if (!i && !r) return { error: 'no such package' }
+    return { name, version: i?.upgrade ?? i?.version ?? r![1], description: i?.description ?? r![2], license: 'GPL-2.0', url: 'https://openwrt.org/',
+      size: i?.size ?? r![3] * 2, download: (i?.size ?? r![3] * 2) / 2, depends: name === 'tcpdump-mini' ? ['libc', 'libpcap1'] : ['libc'],
+      required_by: name === 'libpcap1' ? ['tcpdump-mini'] : [], installed: i?.version ?? null, world: !!i?.world }
+  },
+  pkg_action: ({ action, packages }) => startJob(String(action), Array.isArray(packages) ? packages.map(String) : []),
+  pkg_job: () => mockJob ?? {},
 })
 
 registerMock('er4', {
