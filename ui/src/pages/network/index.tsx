@@ -1,9 +1,9 @@
 // Network: which networks run on which port (a map: drag a port onto a network), the logical
 // networks with inline editing, and the "New network" wizard. Routes:
 //   #/network                     overview
-//   #/network/port/<ethN>         port drawer (the dashboard links here)
+//   #/network/port/<lanN>         port drawer (the dashboard links here)
 //   #/network/iface/<name>        network drawer
-//   #/network/new[/vlan/<parent>|/port/<ethN>]   wizard, optionally pre-placed
+//   #/network/new[/vlan/<parent>|/port/<lanN>]   wizard, optionally pre-placed
 //   #/network/route/<section|new>  static route drawer
 import type { PageProps } from '../../app'
 import { go } from '../../app'
@@ -137,7 +137,7 @@ function GlobalCard({ m }: { m: NetModel }) {
         <span class="row" title="Off on the ER-4: the ports already spread receive over all 4 cores; on, it funnels it to one core">
           <Segmented value={steering === '1' || steering === '2' ? '1' : '0'} onChange={set('packet_steering')}
             options={[{ value: '0', label: 'Off' }, { value: '1', label: 'On' }]} />
-          {steering !== '0' && <Badge status="warning">slows offload</Badge>}
+          {steering !== '0' && <Badge status="warning">not recommended</Badge>}
         </span>
       </div>
     </Card>

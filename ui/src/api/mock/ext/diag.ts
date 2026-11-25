@@ -29,18 +29,18 @@ const KERNEL: [number, string, string][] = [
   [1.204, 'info', 'mmc0: new high speed MMC card at address 0001'],
   [1.231, 'info', 'mmcblk0: mmc0:0001 8GTF4R 7.28 GiB'],
   [1.240, 'info', ' mmcblk0: p1 p2'],
-  [2.871, 'info', 'octeon-ethernet 0.0: 4 ports (eth0..eth3)'],
-  [2.902, 'warn', 'octeon-ethernet: SFP eth3: no module'],
+  [2.871, 'info', 'octeon-ethernet 0.0: 4 ports (lan0..lan3)'],
+  [2.902, 'warn', 'octeon-ethernet: SFP lan3: no module'],
   [3.410, 'info', 'cavium_ip_offload: flow table 65536 entries, hash 16 bits'],
   [5.882, 'info', 'init: Console is alive'],
   [6.120, 'info', 'kmodloader: done loading kernel modules from /etc/modules.d/*'],
-  [9.402, 'info', 'eth0: Link is up - 1000/Full'],
-  [9.450, 'info', 'eth1: Link is up - 1000/Full'],
-  [9.511, 'info', 'br-lan: port 1(eth1) entered forwarding state'],
+  [9.402, 'info', 'lan0: Link is up - 1000/Full'],
+  [9.450, 'info', 'lan1: Link is up - 1000/Full'],
+  [9.511, 'info', 'br-lan: port 1(lan1) entered forwarding state'],
   [10.033, 'info', 'wireguard: WireGuard 1.0.0 loaded'],
-  [86400 + 812.4, 'info', 'eth2: Link is down'],
-  [86400 + 815.9, 'info', 'eth2: Link is up - 100/Full'],
-  [2 * 86400 + 3990.2, 'err', 'octeon-ethernet eth0: rx error: frame check sequence (count 1)'],
+  [86400 + 812.4, 'info', 'lan2: Link is down'],
+  [86400 + 815.9, 'info', 'lan2: Link is up - 100/Full'],
+  [2 * 86400 + 3990.2, 'err', 'octeon-ethernet lan0: rx error: frame check sequence (count 1)'],
   [UPTIME0 - 600, 'warn', 'nf_conntrack: nf_conntrack: table full, dropping packet'],
   [UPTIME0 - 590, 'info', 'cavium_ip_offload: invalidated 1834 flows (ruleset change)'],
 ]
@@ -66,7 +66,7 @@ function systemLog(n: number): Line[] {
   add(b + 6.4, 'daemon', 'info', 'procd', '- ubus -')
   add(b + 7.1, 'daemon', 'notice', 'netifd', 'Interface \'lan\' is enabled')
   add(b + 7.2, 'daemon', 'notice', 'netifd', 'Interface \'wan\' is enabled')
-  add(b + 9.6, 'daemon', 'notice', 'netifd', 'Network device \'eth0\' link is up')
+  add(b + 9.6, 'daemon', 'notice', 'netifd', 'Network device \'lan0\' link is up')
   add(b + 9.7, 'daemon', 'notice', 'netifd', 'Interface \'lan\' is now up')
   add(b + 10.1, 'daemon', 'notice', 'netifd', 'Interface \'wg0\' is now up')
   add(b + 11.3, 'daemon', 'notice', 'netifd', 'wan (1702): udhcpc: sending discover')
@@ -78,7 +78,7 @@ function systemLog(n: number): Line[] {
   add(b + 13.0, 'daemon', 'info', 'dropbear[2104]', 'Not backgrounding')
   add(b + 15.2, 'daemon', 'warn', 'sysntpd', 'ntpd: no valid servers yet, retrying')
   add(b + 21.8, 'daemon', 'notice', 'sysntpd', 'ntpd: clock stepped by 1.213 s')
-  add(b + 22.0, 'user', 'notice', 'firewall', 'Reloading firewall due to ifup of wan (eth0)')
+  add(b + 22.0, 'user', 'notice', 'firewall', 'Reloading firewall due to ifup of wan (lan0)')
   // steady state: DHCP renewals, the odd login, a WAN renew, a ruleset reload
   let t = b + 600
   let i = 0
@@ -102,37 +102,37 @@ function systemLog(n: number): Line[] {
 // ---- routes -------------------------------------------------------------------------------
 function routes() {
   const ipv4 = [
-    { dst: 'default', gateway: '203.0.113.1', dev: 'eth0', protocol: 'static', flags: [] },
+    { dst: 'default', gateway: '203.0.113.1', dev: 'lan0', protocol: 'static', flags: [] },
     { dst: '10.200.0.0/24', dev: 'wg0', protocol: 'kernel', scope: 'link', prefsrc: '10.200.0.1', flags: [] },
     { dst: '10.200.0.2', dev: 'wg0', protocol: 'static', scope: 'link', flags: [] },
     { dst: '10.200.0.3', dev: 'wg0', protocol: 'static', scope: 'link', flags: [] },
     { dst: '192.168.1.0/24', dev: 'br-lan', protocol: 'kernel', scope: 'link', prefsrc: '192.168.1.1', flags: [] },
     { dst: '192.168.20.0/24', dev: 'br-lan.20', protocol: 'kernel', scope: 'link', prefsrc: '192.168.20.1', flags: ['linkdown'] },
     { dst: '192.168.30.0/24', dev: 'br-lan.30', protocol: 'kernel', scope: 'link', prefsrc: '192.168.30.1', flags: [] },
-    { dst: '203.0.113.0/24', dev: 'eth0', protocol: 'kernel', scope: 'link', prefsrc: '203.0.113.57', flags: [] },
+    { dst: '203.0.113.0/24', dev: 'lan0', protocol: 'kernel', scope: 'link', prefsrc: '203.0.113.57', flags: [] },
     { type: 'local', dst: '127.0.0.0/8', dev: 'lo', table: 'local', protocol: 'kernel', scope: 'host', prefsrc: '127.0.0.1', flags: [] },
     { type: 'local', dst: '127.0.0.1', dev: 'lo', table: 'local', protocol: 'kernel', scope: 'host', prefsrc: '127.0.0.1', flags: [] },
     { type: 'broadcast', dst: '192.168.1.255', dev: 'br-lan', table: 'local', protocol: 'kernel', scope: 'link', prefsrc: '192.168.1.1', flags: [] },
     { type: 'local', dst: '192.168.1.1', dev: 'br-lan', table: 'local', protocol: 'kernel', scope: 'host', prefsrc: '192.168.1.1', flags: [] },
-    { type: 'local', dst: '203.0.113.57', dev: 'eth0', table: 'local', protocol: 'kernel', scope: 'host', prefsrc: '203.0.113.57', flags: [] },
+    { type: 'local', dst: '203.0.113.57', dev: 'lan0', table: 'local', protocol: 'kernel', scope: 'host', prefsrc: '203.0.113.57', flags: [] },
   ]
   const ipv6 = [
-    { dst: 'default', gateway: 'fe80::1', dev: 'eth0', protocol: 'static', metric: 512, flags: [], pref: 'medium' },
+    { dst: 'default', gateway: 'fe80::1', dev: 'lan0', protocol: 'static', metric: 512, flags: [], pref: 'medium' },
     { dst: '2001:db8:4a10:100::/64', dev: 'br-lan', protocol: 'static', metric: 1024, flags: [], pref: 'medium' },
     { dst: '2001:db8:4a10:130::/64', dev: 'br-lan.30', protocol: 'static', metric: 1024, flags: [], pref: 'medium' },
     { type: 'unreachable', dst: '2001:db8:4a10:100::/56', dev: 'lo', protocol: 'static', metric: 2147483647, flags: [], pref: 'medium' },
     { dst: 'fd3c:6a1e:9b20::/64', dev: 'br-lan', protocol: 'static', metric: 1024, flags: [], pref: 'medium' },
     { type: 'unreachable', dst: 'fd3c:6a1e:9b20::/48', dev: 'lo', protocol: 'static', metric: 2147483647, flags: [], pref: 'medium' },
-    { dst: 'fe80::/64', dev: 'eth0', protocol: 'kernel', metric: 256, flags: [], pref: 'medium' },
+    { dst: 'fe80::/64', dev: 'lan0', protocol: 'kernel', metric: 256, flags: [], pref: 'medium' },
     { dst: 'fe80::/64', dev: 'br-lan', protocol: 'kernel', metric: 256, flags: [], pref: 'medium' },
     { type: 'local', dst: '2001:db8:4a10:100::1', dev: 'br-lan', table: 'local', protocol: 'kernel', metric: 0, flags: [], pref: 'medium' },
     { type: 'multicast', dst: 'ff00::/8', dev: 'br-lan', table: 'local', protocol: 'kernel', metric: 256, flags: [], pref: 'medium' },
   ]
   const neigh = [
-    { dst: '203.0.113.1', dev: 'eth0', lladdr: '00:00:5e:00:01:07', state: ['REACHABLE'] },
+    { dst: '203.0.113.1', dev: 'lan0', lladdr: '00:00:5e:00:01:07', state: ['REACHABLE'] },
     ...DEVICES.map(([ip, mac], k) => ({ dst: ip, dev: ip.startsWith('192.168.30.') ? 'br-lan.30' : 'br-lan', lladdr: mac, state: [k === 2 ? 'STALE' : 'REACHABLE'] })),
     { dst: '192.168.1.152', dev: 'br-lan', state: ['FAILED'] },
-    { dst: 'fe80::1', dev: 'eth0', lladdr: '00:00:5e:00:01:07', router: null, state: ['REACHABLE'] },
+    { dst: 'fe80::1', dev: 'lan0', lladdr: '00:00:5e:00:01:07', router: null, state: ['REACHABLE'] },
     { dst: '2001:db8:4a10:100:0:ff:fe0c:7e19', dev: 'br-lan', lladdr: '02:00:00:0c:7e:19', state: ['REACHABLE'] },
     { dst: 'fe80::682e:ddff:fe04:5c', dev: 'br-lan', lladdr: '6a:91:2e:dd:04:5c', state: ['STALE'] },
   ]
@@ -143,13 +143,11 @@ function routes() {
 const WAN = '203.0.113.57'
 function conntrack({ limit }: { limit?: unknown }) {
   const flows: object[] = []
-  // big established flows are in the offload flow cache (both directions); small or idle ones aren't
-  const lan = (ip: string) => (ip.startsWith('192.168.30.') ? 'eth1.30' : 'eth1')
-  const both = (ip: string, age: number) => ({ orig: { in: lan(ip), out: 'eth0', age }, reply: { in: 'eth0', out: lan(ip), age: age - 40 } })
+  // big established flows are offloaded in hardware; small or idle ones aren't
   const tcp = (src: string, sport: number, dst: string, dport: number, state: string, timeout: number, kb: number) => flows.push({
     family: 4, proto: 'tcp', state, timeout, src, dst, sport, dport, reply_src: dst, reply_dst: WAN, reply_sport: dport, reply_dport: sport,
     bytes: kb * 90, packets: kb, reply_bytes: kb * 1400, reply_packets: kb, flags: ['ASSURED'],
-    ...(state === 'ESTABLISHED' && kb >= 90 ? { offload: both(src, 900 + (kb % 7000)) } : {}),
+    ...(state === 'ESTABLISHED' && kb >= 90 ? { offload: 'hw' } : {}),
   })
   const udp = (src: string, sport: number, dst: string, dport: number, timeout: number, replied = true) => flows.push({
     family: 4, proto: 'udp', timeout, src, dst, sport, dport, reply_src: dst, reply_dst: dst.startsWith('192.168.') ? src : WAN, reply_sport: dport, reply_dport: sport,
@@ -164,16 +162,16 @@ function conntrack({ limit }: { limit?: unknown }) {
   tcp('192.168.30.101', 39000, '52.94.233.1', 443, 'SYN_SENT', 98, 1)
   udp('192.168.1.131', 40000, '1.1.1.1', 53, 25, false)
   udp('192.168.1.42', 3074, '198.51.100.90', 3074, 170)
-  Object.assign(flows[flows.length - 1], { offload: both('192.168.1.42', 2300) })
+  Object.assign(flows[flows.length - 1], { offload: 'hw' })
   udp('192.168.1.117', 123, '162.159.200.1', 123, 12)
   for (let i = 0; i < 6; i++) udp(`192.168.1.${[117, 131, 140, 42, 152, 20][i]}`, 50000 + i * 7, '192.168.1.1', 53, 20 + i)
   flows.push({ family: 4, proto: 'icmp', timeout: 29, src: '192.168.1.117', dst: '8.8.8.8', reply_src: '8.8.8.8', reply_dst: WAN, flags: [] })
   flows.push({ family: 4, proto: 'udp', timeout: 179, src: '198.51.100.200', dst: WAN, sport: 41000, dport: 51820, reply_src: WAN, reply_dst: '198.51.100.200', reply_sport: 51820, reply_dport: 41000, bytes: 88000, packets: 410, reply_bytes: 120000, reply_packets: 395, flags: ['ASSURED'] })
   flows.push({ family: 4, proto: 'tcp', state: 'ESTABLISHED', timeout: 7440, src: '192.168.1.117', dst: '192.168.1.1', sport: 52000, dport: 443, reply_src: '192.168.1.1', reply_dst: '192.168.1.117', reply_sport: 443, reply_dport: 52000, bytes: 41000, packets: 300, reply_bytes: 980000, reply_packets: 700, flags: ['ASSURED'] })
   flows.push({ family: 6, proto: 'tcp', state: 'ESTABLISHED', timeout: 431000, src: '2001:db8:4a10:100:0:ff:fe0c:7e19', dst: '2606:4700::6810:84e5', sport: 50100, dport: 443, reply_src: '2606:4700::6810:84e5', reply_dst: '2001:db8:4a10:100:0:ff:fe0c:7e19', reply_sport: 443, reply_dport: 50100, bytes: 9000, packets: 60, reply_bytes: 410000, reply_packets: 290, flags: ['ASSURED'],
-    offload: { reply: { in: 'eth0', out: 'eth1', age: 3100 } } })
+    offload: 'sw' })
   const n = typeof limit === 'number' && limit > 0 ? limit : 2000
-  return { count: flows.length, max: 65536, offload: { ipv4: true, ipv6: true }, flows: flows.slice(0, n) }
+  return { count: flows.length, max: 65536, offload: { software: true, hardware: true }, flows: flows.slice(0, n) }
 }
 
 // ---- WAN health -------------------------------------------------------------------------------
@@ -339,7 +337,7 @@ const PROCS: [number, number, string, string, number, string][] = [
   [1120, 1, 'root', 'S', 2100, '/usr/sbin/uhttpd -f -h /www -r er4 -x /cgi-bin -u /ubus -t 60 -T 30 -k 20 -A 1 -n 3 -N 100 -R -p 0.0.0.0:80'],
   [1201, 1, 'dnsmasq', 'S', 3300, '/usr/sbin/dnsmasq -C /var/etc/dnsmasq.conf.cfg01411c -k -x /var/run/dnsmasq/dnsmasq.cfg01411c.pid'],
   [1302, 1, 'root', 'S', 1200, '/usr/sbin/ntpd -n -N -S /usr/sbin/ntpd-hotplug -p 0.openwrt.pool.ntp.org'],
-  [1410, 1, 'root', 'S', 900, '/bin/sh /usr/libexec/er4-wanmon'], [1532, 890, 'root', 'S', 700, 'udhcpc -p /var/run/udhcpc-eth0.pid -s /lib/netifd/dhcp.script -f -t 0 -i eth0'],
+  [1410, 1, 'root', 'S', 900, '/bin/sh /usr/libexec/er4-wanmon'], [1532, 890, 'root', 'S', 700, 'udhcpc -p /var/run/udhcpc-lan0.pid -s /lib/netifd/dhcp.script -f -t 0 -i lan0'],
 ]
 const killed = new Set<number>()
 let capture: { t0: number; secs: number; stopped?: number } | undefined
@@ -368,7 +366,7 @@ registerMock('er4', {
     const el = Math.min(capture.secs * 1000, (capture.stopped ?? Date.now()) - capture.t0)
     const running = !capture.stopped && el < capture.secs * 1000
     const pk = Math.round(el / 10)
-    return { running, size: 24 + pk * 120, log: running ? 'tcpdump: listening on eth0, link-type EN10MB (Ethernet), snapshot length 262144 bytes' : `${pk} packets captured\n${pk} packets received by filter\n0 packets dropped by kernel` }
+    return { running, size: 24 + pk * 120, log: running ? 'tcpdump: listening on lan0, link-type EN10MB (Ethernet), snapshot length 262144 bytes' : `${pk} packets captured\n${pk} packets received by filter\n0 packets dropped by kernel` }
   },
   capture_stop: () => { if (capture) capture.stopped = Date.now(); return {} },
 })

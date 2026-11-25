@@ -1,4 +1,4 @@
-// The ER-4 front panel: eth0 (WAN) .. eth3, in panel order. Each port shows link
+// The ER-4 front panel: lan0 (WAN) .. lan3, in panel order. Each port shows link
 // state + speed (network.device status) and live rx/tx (er4.stats); click opens the port page.
 import type { DeviceStatus, UciConfig } from '../../api/types'
 import { bps, count, linkSpeed } from '../../components/format'

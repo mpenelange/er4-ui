@@ -48,7 +48,7 @@ export function RulesView({ openId }: { openId?: string }) {
   return (
     <>
       <Card flush title="Traffic rules" actions={<>
-        {slow ? <span class="card-hint" title="These rules need every packet, so their connections can't be offloaded">{slow} on the CPU slow path</span> : null}
+        {slow ? <span class="card-hint" title="These rules act on every packet, but once a connection is offloaded they only see its first packets">{slow} see only first packets</span> : null}
         <input class="input rule-filter" placeholder="Filter" value={q} onInput={(e) => setQ((e.target as HTMLInputElement).value)} aria-label="Filter rules" />
         <Button variant="primary" icon="plus" onClick={() => go('firewall', 'rules', 'new')}>Add rule</Button>
       </>}>
@@ -333,7 +333,7 @@ function RuleDrawer({ rule, onClose }: { rule?: UciSection; onClose: () => void 
             </Field>
             <label class="row fw-flag"><Toggle on={!!d.log && d.log !== '0'} label="Log matches" onChange={(v) => up({ log: v ? '1' : '' })} /> Log matching packets</label>
             {slow.length > 0 && (
-              <div class="warn-line"><Icon name="warning" size={13} /> {slow.join(' and ')} keeps matching traffic off the hardware offload (CPU slow path).</div>
+              <div class="warn-line"><Icon name="warning" size={13} /> With flow offloading on, {slow.join(' and ')} only sees the first packets of each connection: the rest are offloaded past the firewall.</div>
             )}
           </div>
         </details>

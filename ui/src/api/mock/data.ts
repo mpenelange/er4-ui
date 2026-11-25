@@ -1,5 +1,5 @@
 // Mock router state, modelled on the lab ER-4 running the source-built OpenWrt image
-// (eth0 = WAN, eth1-eth3 = LAN bridge, eth3 = SFP; fw4 defaults; offload on).
+// (lan0 = WAN, lan1-lan3 = LAN bridge, lan3 = SFP; fw4 defaults; offload on).
 import type { UciConfig, UciSection } from '../types'
 
 let idx = 0
@@ -25,10 +25,10 @@ export function initialUci(): Record<string, UciConfig> {
     network: config(
       s('interface', 'loopback', { device: 'lo', proto: 'static', ipaddr: '127.0.0.1', netmask: '255.0.0.0' }),
       s('globals', 'globals', { ula_prefix: 'fd3c:6a1e:9b20::/48', packet_steering: '0' }),
-      s('device', 'cfg030f15', { name: 'br-lan', type: 'bridge', ports: ['eth1', 'eth2', 'eth3'] }, true),
+      s('device', 'cfg030f15', { name: 'br-lan', type: 'bridge', ports: ['lan1', 'lan2', 'lan3'] }, true),
       s('interface', 'lan', { device: 'br-lan', proto: 'static', ipaddr: '192.168.1.1', netmask: '255.255.255.0', ip6assign: '60' }),
-      s('interface', 'wan', { device: 'eth0', proto: 'dhcp' }),
-      s('interface', 'wan6', { device: 'eth0', proto: 'dhcpv6' }),
+      s('interface', 'wan', { device: 'lan0', proto: 'dhcp' }),
+      s('interface', 'wan6', { device: 'lan0', proto: 'dhcpv6' }),
       s('device', 'iot_dev', { type: '8021q', ifname: 'br-lan', vid: '30', name: 'br-lan.30' }),
       s('interface', 'iot', { device: 'br-lan.30', proto: 'static', ipaddr: '192.168.30.1', netmask: '255.255.255.0' }),
       s('interface', 'wg0', { proto: 'wireguard', private_key: 'mock-private-key-not-real=', listen_port: '51820', addresses: ['10.200.0.1/24'] }),
@@ -36,7 +36,7 @@ export function initialUci(): Record<string, UciConfig> {
       s('wireguard_wg0', 'peer_laptop', { description: 'laptop', public_key: 'LaPToP0mockPublicKeyAAAAAAAAAAAAAAAAAAAAAAA=', allowed_ips: ['10.200.0.3/32'] }),
     ),
     firewall: config(
-      s('defaults', 'cfg01e63d', { syn_flood: '1', input: 'REJECT', output: 'ACCEPT', forward: 'REJECT' }, true),
+      s('defaults', 'cfg01e63d', { syn_flood: '1', input: 'REJECT', output: 'ACCEPT', forward: 'REJECT', flow_offloading: '1', flow_offloading_hw: '1' }, true),
       s('zone', 'cfg02dc81', { name: 'lan', network: ['lan'], input: 'ACCEPT', output: 'ACCEPT', forward: 'ACCEPT' }, true),
       s('zone', 'cfg03dc81', { name: 'wan', network: ['wan', 'wan6'], input: 'REJECT', output: 'ACCEPT', forward: 'REJECT', masq: '1', mtu_fix: '1' }, true),
       s('zone', 'cfg04dc81', { name: 'iot', network: ['iot'], input: 'REJECT', output: 'ACCEPT', forward: 'REJECT' }, true),
@@ -62,9 +62,6 @@ export function initialUci(): Record<string, UciConfig> {
       s('domain', 'cfg08f37c', { name: 'homeassistant', ip: '192.168.30.20' }, true),
       s('cname', 'cfg09a1b2', { cname: 'files', target: 'nas' }, true),
     ),
-    offload: config(
-      s('offload', 'global', { enabled: '1', ipv4: '1', ipv6: '0', vlan: '1', pppoe: '0', stats: '1' }),
-    ),
   }
 }
 
@@ -81,8 +78,8 @@ export const leases = [
 ]
 
 export const ports = {
-  eth0: { mac: '02:00:00:00:00:10', speed: '1000F', carrier: true },
-  eth1: { mac: '02:00:00:00:00:11', speed: '1000F', carrier: true },
-  eth2: { mac: '02:00:00:00:00:12', speed: '1000F', carrier: true },
-  eth3: { mac: '02:00:00:00:00:13', speed: '1000F', carrier: true },
+  lan0: { mac: '02:00:00:00:00:10', speed: '1000F', carrier: true },
+  lan1: { mac: '02:00:00:00:00:11', speed: '1000F', carrier: true },
+  lan2: { mac: '02:00:00:00:00:12', speed: '1000F', carrier: true },
+  lan3: { mac: '02:00:00:00:00:13', speed: '1000F', carrier: true },
 } as const

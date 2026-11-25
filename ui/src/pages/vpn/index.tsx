@@ -22,6 +22,7 @@ import { Setup } from './setup'
 import { ImportTunnel } from './import'
 import { TailscaleCard } from './tailscale'
 import { IpsecCard } from './ipsec'
+import { FEATURES } from '../../features'
 import { useServerPub, type VpnData } from './shared'
 import './vpn.css'
 
@@ -56,8 +57,8 @@ export default function Vpn({ path }: PageProps) {
       <div class="page">
         <PageHead title="VPN"><Button icon="upload" onClick={() => go('vpn', 'import')}>Import config</Button></PageHead>
         <Setup data={d} />
-        <TailscaleCard data={d} />
-        <IpsecCard data={d} sub={sub} id={id} />
+        {FEATURES.tailscale && <TailscaleCard data={d} />}
+        {FEATURES.ipsec && <IpsecCard data={d} sub={sub} id={id} />}
         {importing}
       </div>
     )
@@ -77,8 +78,8 @@ export default function Vpn({ path }: PageProps) {
         <div class="vpn-warn"><Icon name="warning" size={14} /> Live status unavailable ({rt.error.message}). The configuration below is still editable.</div>
       )}
       {ifaces.map((iface) => <TunnelCard iface={iface} inst={instOf(iface['.name'])} data={d} statusKnown={statusKnown} />)}
-      <TailscaleCard data={d} />
-      <IpsecCard data={d} sub={sub} id={id} />
+      {FEATURES.tailscale && <TailscaleCard data={d} />}
+      {FEATURES.ipsec && <IpsecCard data={d} sub={sub} id={id} />}
       {sub === 'add' && <AddDevice iface={addTo} inst={instOf(addTo['.name'])} data={d} onClose={() => go('vpn')} />}
       {peer && <PeerDrawer peer={peer} inst={instOf(peer['.type'].replace(/^wireguard_/, ''))} onClose={() => go('vpn')} />}
       {tunnel && <TunnelDrawer iface={tunnel} inst={instOf(tunnel['.name'])} data={d} onClose={() => go('vpn')} />}

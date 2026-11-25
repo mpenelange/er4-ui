@@ -26,7 +26,7 @@ export function MockMenu() {
         }>
           <p class="secondary" style={{ marginTop: 0 }}>
             Edge states of the mock router; they apply from the next poll. Also settable in the URL:
-            <code> ?mock&scenario=wan-down,eth2-nolink</code> or <code>#/dashboard?scenario=…</code>
+            <code> ?mock&scenario=wan-down,lan2-nolink</code> or <code>#/dashboard?scenario=…</code>
           </p>
           <div class="stack">
             {Object.entries(SCENARIOS).map(([k, label]) => (

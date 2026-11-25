@@ -7,7 +7,7 @@
 //     2 s x 150 (5 min), 15 s x 240 (1 h), 120 s x 720 (24 h); ~40 KiB total. Lets the
 //     dashboard draw the last 5 min / 1 h / 24 h the moment it opens instead of starting empty.
 //
-// Scenarios (see ../scenario.ts): wan-down, eth2-nolink, eth3-100m, stats-error, slow,
+// Scenarios (see ../scenario.ts): wan-down, lan2-nolink, lan3-100m, stats-error, slow,
 // offload-off, conntrack-full, no-leases.
 import { UBUS_STATUS, UbusError } from '../../ubus'
 import type { Er4Stats, NetInterface } from '../../types'
@@ -19,8 +19,8 @@ type Counters = Er4Stats['ports'][string]
 // Which ports have no carrier right now
 function downPorts(): Set<string> {
   const s = new Set<string>()
-  if (scenario('wan-down')) s.add('eth0')
-  if (scenario('eth2-nolink')) s.add('eth2')
+  if (scenario('wan-down')) s.add('lan0')
+  if (scenario('lan2-nolink')) s.add('lan2')
   return s
 }
 
@@ -49,7 +49,7 @@ wrapMock('er4', 'stats', (orig) => async (args) => {
   const down = downPorts()
   for (const [p, c] of Object.entries(s.ports)) s.ports[p] = adjustPort(p, c, down.has(p))
   // No WAN or no offload module: the fast path sees no packets
-  const idle = down.has('eth0') || scenario('offload-off')
+  const idle = down.has('lan0') || scenario('offload-off')
   const raw = { ...s.offload, flow_found: s.offload.flow_found - flowsOffset.flow_found, flow_not_found: s.offload.flow_not_found - flowsOffset.flow_not_found }
   if (idle) {
     flowsFrozen ??= raw
@@ -77,7 +77,7 @@ wrapMock('network.device', 'status', (orig) => async (args) => {
   const down = downPorts()
   const fix = (name: string, d: { carrier: boolean; speed?: string }) => {
     if (down.has(name)) { d.carrier = false; d.speed = '-1' }
-    if (name === 'eth3' && scenario('eth3-100m')) d.speed = '100H'
+    if (name === 'lan3' && scenario('lan3-100m')) d.speed = '100H'
   }
   if (args.name) fix(String(args.name), r as unknown as D)
   else for (const [n, d] of Object.entries(r)) fix(n, d)
@@ -124,7 +124,7 @@ registerMock('er4', {
     const n = Math.round(win / step)
     const now = (await objects.er4.stats({})) as Er4Stats
     const out: Er4Stats[] = [now]
-    const lanShare: Record<string, number> = { eth1: 0.55, eth2: 0.35, eth3: 0.1 }
+    const lanShare: Record<string, number> = { lan1: 0.55, lan2: 0.35, lan3: 0.1 }
     let cur = JSON.parse(JSON.stringify(now)) as Er4Stats
     for (let k = 1; k <= n; k++) {
       const t = now.time / 1000 - k * step
@@ -138,7 +138,7 @@ registerMock('er4', {
         c.rx_packets -= (rx / 8 / 900) * step
         c.tx_packets -= (tx / 8 / 900) * step
       }
-      take('eth0', down, up)
+      take('lan0', down, up)
       for (const [p, share] of Object.entries(lanShare)) take(p, up * share, down * share)
       const pps = (down + up) / 8 / 900
       prev.offload.flow_found -= pps * (0.975 + 0.02 * Math.random()) * step

@@ -1,20 +1,13 @@
-// rpcd plugin "er4": live router state and image management for the ER-4 web UI.
-// Reply shapes are the contract in ui/src/api/types.ts and ui/src/api/mock/ext/*.ts.
-//
-// Image layout (no A/B bootloader fallback: stock U-Boot always boots p1:vmlinux.64):
-//   p1:vmlinux.64         the image U-Boot boots ("a" = running, after install "the new one")
-//   p1:vmlinux.64.prev    the previous image (rollback target, "b")
-//   p1:vmlinux.64.edgeos  stock EdgeOS kernel (not managed here)
-// An image is the whole system (kernel + initramfs rootfs); /etc persists on p2:/er4/etc.
+// rpcd plugin "er4": live router state for the er4 web UI on stock OpenWrt (served at /er4/,
+// next to LuCI). Reply shapes are the contract in ui/src/api/types.ts and ui/src/api/mock/ext/*.ts.
+// Offload state comes from kmod-octeon-offload (/proc/octeon_offload) and fw4's flowtable settings.
 'use strict';
 
 import { readfile, writefile, popen, stat, mkdir, unlink, access, lsdir } from 'fs';
 import { cursor } from 'uci';
 
-const PORTS = [ 'eth0', 'eth1', 'eth2', 'eth3' ];
+const PORTS = [ 'lan0', 'lan1', 'lan2', 'lan3' ];
 const COUNTERS = [ 'rx_bytes', 'tx_bytes', 'rx_packets', 'tx_packets', 'rx_dropped', 'tx_dropped' ];
-const P1 = '/mnt/er4p1';
-const STATUS = '/tmp/er4-firmware.json';
 
 function num(path) {
 	const v = readfile(path);
@@ -39,8 +32,8 @@ function user_exists(name) {
 	return false;
 }
 
-// A factory-fresh /etc has root with an empty shadow field (stock OpenWrt). rpcd and dropbear
-// are patched/configured not to accept that, so the UI's first-boot setup sets one instead.
+// A factory-fresh /etc has root with an empty shadow field (stock OpenWrt): the UI's login page
+// then offers to set one (er4.setup_password, allowed only while none is set), as LuCI does.
 function root_has_password() {
 	for (let line in split(readfile('/etc/shadow') ?? '', '\n')) {
 		const f = split(line, ':');
@@ -58,13 +51,35 @@ function now_ms() {
 	return t[0] * 1000 + int(t[1] / 1000000);
 }
 
-function cavium_stats() {
+// kmod-octeon-offload's counters ("name value" lines); null when the module isn't loaded
+function oo_stats() {
+	const raw = readfile('/proc/octeon_offload');
+	if (raw == null) return null;
 	const out = {};
-	for (let line in split(readfile('/proc/cavium/stats') ?? '', '\n')) {
-		const m = match(line, /^(\S+)\s+(\d+)/);
-		if (m) out[m[1]] = +m[2];
+	for (let line in split(raw, '\n')) {
+		const m = match(line, /^(\S+) (.*)$/);
+		if (m) out[m[1]] = match(m[2], /^\d+$/) ? +m[2] : m[2];
 	}
 	return out;
+}
+
+// The router's ports in fw4's flowtable ("devices = { "lan0", "lan3" }"): fw4 lists the devices
+// of its zones, so a port that isn't in use isn't there and isn't bound
+function flowtable_ports() {
+	const m = match(sh('nft list flowtables 2>/dev/null'), /devices = \{([^}]*)\}/);
+	if (!m) return [];
+	return filter(map(split(m[1], ','), (d) => trim(replace(d, '"', ''))), (d) => index(PORTS, d) >= 0);
+}
+
+// fw4's flow offloading switches (firewall.@defaults[0])
+function flowtable() {
+	const r = { software: false, hardware: false };
+	cursor().foreach('firewall', 'defaults', function(s) {
+		r.software = s.flow_offloading == '1';
+		r.hardware = r.software && s.flow_offloading_hw == '1';
+		return false;
+	});
+	return r;
 }
 
 function sample() {
@@ -84,15 +99,17 @@ function sample() {
 		for (let c in COUNTERS)
 			ports[p][c] = num(`/sys/class/net/${p}/statistics/${c}`) ?? 0;
 	}
-	const cs = cavium_stats();
+	const os = oo_stats();
 	return {
 		time: now_ms(),
 		cpu,
 		ports,
+		// forwarded: packets the hardware fast path sent; no_flow: packets it looked at and passed to
+		// the stack (no flow yet); flows_removed: flows dropped (firewall reloads, ports going down)
 		offload: {
-			flow_found: cs.ipv4_flow_found ?? 0,
-			flow_not_found: cs.ipv4_flow_not_found ?? 0,
-			invalidations: num('/proc/cavium/invalidate') ?? 0
+			flow_found: os?.forwarded ?? 0,
+			flow_not_found: os?.no_flow ?? 0,
+			invalidations: os?.flows_removed ?? 0
 		},
 		conntrack: {
 			count: num('/proc/sys/net/netfilter/nf_conntrack_count') ?? 0,
@@ -114,41 +131,7 @@ function remember(s) {
 	}
 }
 
-// ---- images on p1 -------------------------------------------------------------------
-function with_p1(fn) {
-	mkdir(P1);
-	const mounted = index(readfile('/proc/mounts') ?? '', ` ${P1} `) >= 0;
-	if (!mounted && system(`mount -t vfat /dev/mmcblk0p1 ${P1} 2>/dev/null`) != 0)
-		return { error: 'cannot mount mmcblk0p1' };
-	const r = fn();
-	if (!mounted) system(`umount ${P1}`);
-	return r;
-}
-
-// Cheap on purpose: rpcd is single-threaded, so nothing here may read the 26 MB images.
-// Checksums come from the .md5 sidecars written at install time.
-function image_meta(path) {
-	const st = stat(path);
-	if (!st) return null;
-	return {
-		size: st.size,
-		installed: st.mtime,
-		md5: split(trim(readfile(`${path}.md5`) ?? ''), ' ')[0] || null
-	};
-}
-
-// The build ID the image build appends after the kernel: "er4-build=<rev> k<kernel rev> <unix time>"
-// (openwrt/target/linux/er4/image/Makefile). Images built before it have none (null).
-function build_tag(path) {
-	const t = sh(`tail -c 256 ${q(path)} 2>/dev/null | tr '\\000' '\\n' | sed -n 's/^er4-build=//p' | tail -n 1`);
-	const m = match(trim(t), /^([0-9a-f]+(-dirty)?) k([0-9a-f]+(-dirty)?) ([0-9]+)$/);
-	return m ? { rev: m[1], kernel: m[3], built: +m[5] } : null;
-}
-
-// What this boot came from, recorded at boot by /etc/init.d/er4-boot (the md5 sidecar of
-// vmlinux.64 then); vmlinux.64 changes on install, so it can't say what's running afterwards.
-const BOOTED = '/tmp/er4-booted';
-
+// ---- system -------------------------------------------------------------------------
 function release() {
 	const r = {};
 	for (let line in split(readfile('/etc/openwrt_release') ?? '', '\n')) {
@@ -156,32 +139,6 @@ function release() {
 		if (m) r[lc(m[1])] = m[2];
 	}
 	return r;
-}
-
-function set_status(s) {
-	writefile(STATUS, sprintf('%J', s));
-	return s;
-}
-
-function get_status() {
-	return json(readfile(STATUS) ?? '{"state":"idle","progress":0}');
-}
-
-function verify(path) {
-	const checks = [];
-	const st = stat(path);
-	const head = st ? sh(`head -c 20 ${q(path)} | hexdump -v -e '1/1 "%02x"'`) : '';
-	// ELF64, big-endian, MIPS (e_machine 8)
-	const elf = substr(head, 0, 8) == '7f454c46' && substr(head, 8, 4) == '0202' && substr(head, 36, 4) == '0008';
-	push(checks, { id: 'format', label: 'MIPS64 big-endian ELF kernel image', ok: elf, detail: st ? (elf ? 'ok' : 'not a firmware image') : 'file missing' });
-	const meta = st ? { size: st.size, sha256: split(sh(`sha256sum ${q(path)}`), ' ')[0] } : null;
-	const er4 = st && elf ? sh(`grep -a -F -c -m1 'ubnt,edgerouter-4' ${q(path)}`) : '0';
-	push(checks, { id: 'board', label: 'Built for ubnt,edgerouter-4', ok: elf && +er4 > 0, detail: +er4 > 0 ? 'board name found in the image' : 'board name not found' });
-	push(checks, { id: 'sha256', label: 'SHA-256', ok: null, detail: meta?.sha256 ?? '' });
-	const free = with_p1(() => +sh(`df -k ${P1} | awk 'NR==2{print $4}'`) * 1024);
-	const fits = st && type(free) == 'int' && st.size < free + (stat(`${P1}/vmlinux.64.prev`)?.size ?? 0);
-	push(checks, { id: 'size', label: 'Fits on the boot partition', ok: !!fits, detail: st ? sprintf('%d MB', st.size / 1048576) : '' });
-	return { valid: elf && +er4 > 0 && !!fits, checks, image: meta ? { ...meta, build: build_tag(path), version: null } : null };
 }
 
 // ---- diagnostics ----------------------------------------------------------------------
@@ -278,22 +235,6 @@ function parse_ct(line) {
 	if (o.mark != null && o.mark != '0') c.mark = o.mark;
 	if (o.helper != null) c.helper = o.helper;
 	return c;
-}
-
-// The offload module's live flows (/proc/cavium/flows, our module addition), keyed by the
-// tuple the packets arrive with, so a conntrack entry's original and reply tuples look up
-// its two directions. Line: "family proto in out src sport dst dport tx_src tx_sport tx_dst tx_dport vlan age_ms"
-const IPPROTO = { '6': 'tcp', '17': 'udp' };
-function offload_flows() {
-	const raw = readfile('/proc/cavium/flows');
-	if (raw == null) return null;
-	const m = {};
-	for (let l in split(raw, '\n')) {
-		const f = split(trim(l), ' ');
-		if (length(f) < 14) continue;
-		m[`${IPPROTO[f[1]] ?? f[1]} ${f[4]} ${f[5]} ${f[6]} ${f[7]}`] = { in: f[2], out: f[3], age: +f[13] };
-	}
-	return m;
 }
 
 // "[options ]type base64[ comment]"; dropbear takes these key types
@@ -475,21 +416,23 @@ const methods = {
 		}
 	},
 
+	// kmod-octeon-offload and fw4's flowtable settings. ports: how many ports the module is bound
+	// on (should be length(ports_wanted)); counters: everything /proc/octeon_offload has.
 	offload: {
 		call: function() {
-			const loaded = index(readfile('/proc/modules') ?? '', 'cavium_ip_offload ') >= 0;
-			const flag = (p) => num(p) == 1;
-			const uci = cursor();
+			const os = oo_stats();
+			const ft = flowtable();
 			return {
-				loaded,
-				ipv4: loaded && flag('/proc/cavium/ipv4/fwd'),
-				ipv6: loaded && flag('/proc/cavium/ipv6/fwd'),
-				vlan: loaded && flag('/proc/cavium/ipv4/vlan'),
-				pppoe: loaded && flag('/proc/cavium/ipv4/pppoe'),
-				// collection state isn't readable from /proc/cavium/stats; report the config
-				stats: uci.get('offload', 'global', 'stats') == '1',
-				cache_size: num('/proc/cavium/ipv4/cache_size') ?? 0,
-				fwd_queue_depth: num('/sys/module/octeon_ethernet/parameters/fwd_queue_depth') ?? 0
+				loaded: os != null,
+				hooks: os?.driver_hooks == 'yes',
+				software: ft.software,
+				hardware: ft.hardware,
+				ports: os ? (os.flowtable_binds ?? 0) - (os.flowtable_unbinds ?? 0) : 0,
+				// the Octeon ports fw4 put in its flowtable: every one should be bound
+				ports_wanted: flowtable_ports(),
+				flows: os?.flows ?? 0,
+				max_flows: os?.max_flows ?? 0,
+				counters: os ?? {}
 			};
 		}
 	},
@@ -505,92 +448,6 @@ const methods = {
 				push(out, { ip: f[0], dev: f[2], mac: ll >= 0 ? f[ll + 1] : '', state: f[length(f) - 1] });
 			}
 			return { neighbors: out };
-		}
-	},
-
-	firmware_info: {
-		call: function() {
-			const rel = release();
-			return with_p1(() => {
-				const img = (path) => { const m = image_meta(path); return m ? { build: build_tag(path), installed: m.installed, size: m.size, md5: m.md5 } : null; };
-				const cur = img(`${P1}/vmlinux.64`), prev = img(`${P1}/vmlinux.64.prev`);
-				const booted = trim(readfile(BOOTED) ?? '');
-				// installed since this boot: vmlinux.64 boots next, .prev is the running image's copy
-				const since = booted != '' && cur?.md5 != null && cur.md5 != booted && prev?.md5 == booted;
-				const running = { ...(since ? prev : cur ?? { build: null }), version: rel.release };
-				return {
-					board: trim(readfile('/tmp/sysinfo/board_name') ?? ''),
-					channel: null,	// no published releases yet
-					running,
-					next: since ? cur : null,
-					previous: since ? null : prev
-				};
-			});
-		}
-	},
-
-	firmware_check: {
-		call: function() {
-			const rel = release();
-			// No release channel yet (local builds only)
-			return { current: rel.release, update_available: false, checked: time() };
-		}
-	},
-
-	firmware_verify: {
-		args: { path: '' },
-		call: function(req) {
-			return verify(req.args.path);
-		}
-	},
-
-	firmware_install: {
-		args: { path: '' },
-		call: function(req) {
-			const path = req.args.path;
-			// one install at a time: a second one would interleave on p1
-			if (get_status().state == 'writing') return set_status({ ...get_status() });
-			const v = verify(path);
-			if (!v.valid) return set_status({ state: 'error', progress: 0, message: 'image failed verification' });
-			const sum = v.image.sha256;
-			// Background job: keep the running image as .prev, write .new, check, swap.
-			// /etc lives on p2 and stays as it is (keep_config is always true here).
-			const job = `( mkdir -p ${P1}; grep -q ' ${P1} ' /proc/mounts || mount -t vfat /dev/mmcblk0p1 ${P1} || exit 1
-				cd ${P1} && cp -p vmlinux.64 vmlinux.64.prev.tmp && mv vmlinux.64.prev.tmp vmlinux.64.prev && { cp vmlinux.64.md5 vmlinux.64.prev.md5 2>/dev/null || true; } &&
-				cp ${q(path)} vmlinux.64.new && sync &&
-				[ "$(sha256sum vmlinux.64.new | cut -d' ' -f1)" = ${q(sum)} ] &&
-				mv vmlinux.64.new vmlinux.64 && md5sum vmlinux.64 | cut -d' ' -f1 > vmlinux.64.md5 && sync &&
-				echo '{"state":"ready","progress":1}' > ${STATUS} ||
-				echo '{"state":"error","progress":0,"message":"writing the image failed; the running image is untouched"}' > ${STATUS}
-				cd /; umount ${P1} ) >/dev/null 2>&1 &`;
-			set_status({ state: 'writing', progress: 0.5, path });
-			system(job);
-			return get_status();
-		}
-	},
-
-	firmware_status: {
-		call: function() {
-			return get_status();
-		}
-	},
-
-	firmware_download: {
-		args: { url: '', path: '' },
-		call: function() {
-			return set_status({ state: 'error', progress: 0, message: 'no release channel configured yet: upload an image instead' });
-		}
-	},
-
-	boot_previous: {
-		call: function() {
-			const r = with_p1(() => {
-				if (!stat(`${P1}/vmlinux.64.prev`)) return { error: 'no previous image' };
-				system(`cd ${P1} && mv vmlinux.64 vmlinux.64.swap && mv vmlinux.64.prev vmlinux.64 && mv vmlinux.64.swap vmlinux.64.prev && { mv vmlinux.64.md5 vmlinux.64.md5.swap; mv vmlinux.64.prev.md5 vmlinux.64.md5; mv vmlinux.64.md5.swap vmlinux.64.prev.md5; } 2>/dev/null; sync`);
-				return {};
-			});
-			if (!r.error) system('(sleep 2; reboot) >/dev/null 2>&1 &');
-			return r;
 		}
 	},
 
@@ -650,14 +507,15 @@ const methods = {
 
 	factory_reset: {
 		call: function() {
-			// Forget everything in the persistent /etc (the image's defaults come back on boot)
-			system('(sleep 2; rm -rf /mnt/er4data/er4/etc /mnt/er4data/er4/.etc-work; sync; reboot -f) >/dev/null 2>&1 &');
+			// OpenWrt's own reset: wipe the overlay, defaults come back on the next boot
+			system('(sleep 2; firstboot -y; reboot) >/dev/null 2>&1 &');
 			return {};
 		}
 	},
 
 	// The methods below replace the few LuCI backend calls the UI used (luci.setPassword,
-	// luci.getTimezones, luci.setLocaltime, luci.wireguard.*), so the image needs no luci-base.
+	// luci.getTimezones, luci.setLocaltime, luci.wireguard.*), so it doesn't need luci-base.
+
 
 	set_password: {
 		args: { username: 'root', password: 'password' },
@@ -874,30 +732,30 @@ const methods = {
 		}
 	},
 
-	// The connection tracking table (conntrack-tools, over netlink: the kernel has no
-	// /proc/net/nf_conntrack). {limit} -> {count, max, flows: [...]} (see parse_ct)
+	// The connection tracking table: /proc/net/nf_conntrack (stock OpenWrt has it), else
+	// conntrack-tools if installed. {limit} -> {count, max, offload, flows: [...]} (see parse_ct).
+	// A flow nf_flowtable took over carries the OFFLOAD flag, HW_OFFLOAD once the hardware
+	// (kmod-octeon-offload) holds it too.
 	conntrack: {
 		args: { limit: 2000 },
 		call: function(req) {
 			const n = type(req.args.limit) == 'int' && req.args.limit > 0 ? min(req.args.limit, 10000) : 2000;
 			const flows = [];
-			const fast = offload_flows();
-			for (let l in split(sh(`conntrack -L -o extended 2>/dev/null | head -n ${n}`), '\n')) {
+			let raw = readfile('/proc/net/nf_conntrack');
+			if (raw == null) raw = sh('conntrack -L -o extended 2>/dev/null');
+			for (let l in split(raw ?? '', '\n')) {
+				if (length(flows) >= n) break;
 				const c = parse_ct(l);
 				if (!c) continue;
-				if (fast && c.sport != null) {
-					const o = fast[`${c.proto} ${c.src} ${c.sport} ${c.dst} ${c.dport}`];
-					const r = fast[`${c.proto} ${c.reply_src} ${c.reply_sport} ${c.reply_dst} ${c.reply_dport}`];
-					if (o || r) c.offload = { orig: o, reply: r };
-				}
+				if (index(c.flags, 'HW_OFFLOAD') >= 0) c.offload = 'hw';
+				else if (index(c.flags, 'OFFLOAD') >= 0) c.offload = 'sw';
 				push(flows, c);
 			}
-			const flag = (p) => num(p) == 1;
+			const ft = flowtable();
 			return {
 				count: num('/proc/sys/net/netfilter/nf_conntrack_count') ?? length(flows),
 				max: num('/proc/sys/net/netfilter/nf_conntrack_max') ?? 0,
-				// null: no offload module (or an older one without /proc/cavium/flows)
-				offload: fast ? { ipv4: flag('/proc/cavium/ipv4/fwd'), ipv6: flag('/proc/cavium/ipv6/fwd') } : null,
+				offload: { software: ft.software, hardware: ft.hardware && oo_stats() != null },
 				flows
 			};
 		}

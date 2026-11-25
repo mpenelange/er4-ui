@@ -79,9 +79,10 @@ export async function stagedSections(): Promise<Record<string, Set<string>>> {
 }
 
 // ---- hardware offload ---------------------------------------------------------------------
-// The ER-4 flow offload forwards established flows in hardware, past the nftables rules. Rules
-// that must see every packet (rate limits, logging, raw matches like quota/string, helpers,
-// packet marks) can't be honoured there, so fw4 keeps their traffic on the CPU.
+// With flow offloading on, fw4 adds every established TCP/UDP connection to its flowtable (and the
+// hardware fast path), past the nftables rules. Rules that act on every packet (rate limits,
+// logging, raw matches like quota/string, packet marks) then see only each connection's first
+// packets. Connections with a conntrack helper stay off the flowtable.
 const SLOW: Record<string, string> = {
   limit: 'rate limit',
   limit_burst: 'rate limit',

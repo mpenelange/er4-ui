@@ -1,6 +1,6 @@
 {
 	"er4-ui": {
-		"description": "ER-4 web UI: everything the UI reads and writes (it must not rely on LuCI's ACLs)",
+		"description": "er4 web UI: everything the UI reads and writes (it must not rely on LuCI's ACLs)",
 		"read": {
 			"ubus": {
 				"er4": [
@@ -8,9 +8,6 @@
 					"history",
 					"offload",
 					"neighbors",
-					"firmware_info",
-					"firmware_check",
-					"firmware_status",
 					"timezones",
 					"wg_instances",
 					"log",
@@ -22,10 +19,7 @@
 					"firewall_status",
 					"processes",
 					"crontab",
-					"capture_status",
-					"tailscale_status",
-					"ipsec_status",
-					"acme_status"
+					"capture_status"
 				],
 				"luci-rpc": [
 					"getDHCPLeases",
@@ -58,7 +52,6 @@
 				"dhcp",
 				"firewall",
 				"system",
-				"offload",
 				"dropbear",
 				"ipsec"
 			],
@@ -88,13 +81,7 @@
 					"rollback"
 				],
 				"er4": [
-					"firmware_verify",
-					"firmware_install",
-					"firmware_download",
-					"boot_previous",
 					"reboot",
-					"tailscale_install",
-					"tailscale_update",
 					"config_inspect",
 					"config_restore",
 					"factory_reset",
@@ -108,13 +95,7 @@
 					"kill",
 					"crontab_set",
 					"capture_start",
-					"capture_stop",
-					"tailscale_up",
-					"tailscale_logout",
-					"ipsec_cert",
-					"acme_setup",
-					"acme_renew",
-					"acme_off"
+					"capture_stop"
 				],
 				"network.interface.*": [
 					"up",
@@ -130,7 +111,6 @@
 				"dhcp",
 				"firewall",
 				"system",
-				"offload",
 				"dropbear",
 				"ipsec"
 			],

@@ -98,14 +98,14 @@ export const isForwardRule = (s: UciSection) => !!str(s.src) && !!str(s.dest)
 
 export function SlowPath({ s }: { s: UciSection }) {
   const why = slowPathReasons(s)
-  // traffic to or from the router itself is the CPU's anyway: only forwarded traffic loses offload
+  // traffic to or from the router itself is never offloaded: only forwarded traffic is affected
   if (!why.length || !isForwardRule(s)) return null
   return (
     <Tip text={<>
-      <strong>CPU slow path.</strong> This rule uses {why.join(', ')}, which the hardware flow offload can't do, so matching
-      traffic is handled by the CPU on every packet instead of being offloaded (much lower throughput, more CPU load).
+      <strong>First packets only.</strong> This rule uses {why.join(', ')}, which acts on every packet. With flow offloading
+      on, fw4 hands established connections to the flowtable, so the rule only sees each connection's first packets.
     </>}>
-      <span class="slow-badge" tabIndex={0}><Icon name="warning" size={12} />slow path</span>
+      <span class="slow-badge" tabIndex={0}><Icon name="warning" size={12} />first packets</span>
     </Tip>
   )
 }

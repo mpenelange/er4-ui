@@ -77,7 +77,7 @@ export function PortDrawer({ d, m, port, onClose }: { d: NetData; m: NetModel; p
   }
 
   const cards: { id: Choice; title: string; desc: string; icon: 'globe' | 'network' | 'bolt' | 'close' }[] = [
-    { id: 'wan', title: 'WAN', icon: 'globe', desc: `Internet uplink (${m.nets.filter((n) => n.wan).map((n) => n.name).join(', ') || 'wan'}). ${port === 'eth3' ? 'SFP: fibre or a GPON stick.' : 'Usually the modem.'}` },
+    { id: 'wan', title: 'WAN', icon: 'globe', desc: `Internet uplink (${m.nets.filter((n) => n.wan).map((n) => n.name).join(', ') || 'wan'}). ${port === 'lan3' ? 'SFP: fibre or a GPON stick.' : 'Usually the modem.'}` },
     { id: dedicatedNet ? (`net:${dedicatedNet}` as Choice) : (`net:` as Choice), icon: 'bolt', title: 'Its own network', desc: 'One network on this port alone, routed (and offloaded) to the others.' },
     ...m.bridges.map((b) => {
       const shared = b.ports.filter((p) => p !== port)
@@ -91,7 +91,7 @@ export function PortDrawer({ d, m, port, onClose }: { d: NetData; m: NetModel; p
   ]
 
   return (
-    <Drawer title={<span class="row">Port <span class="mono">{port}</span>{port === 'eth3' && <Badge>SFP</Badge>}</span>} onClose={onClose} footer={
+    <Drawer title={<span class="row">Port <span class="mono">{port}</span>{port === 'lan3' && <Badge>SFP</Badge>}</span>} onClose={onClose} footer={
       <>
         <span class="spacer" />
         <Button onClick={onClose}>Close</Button>

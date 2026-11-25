@@ -13,7 +13,7 @@ export function explain(e: unknown): Error {
   return e as Error
 }
 
-export const PORTS = ['eth0', 'eth1', 'eth2', 'eth3'] as const // categorical slots 1-4, fixed per port
+export const PORTS = ['lan0', 'lan1', 'lan2', 'lan3'] as const // categorical slots 1-4, fixed per port
 const LIVE_MS = 2000
 const LIVE_KEEP = 151
 

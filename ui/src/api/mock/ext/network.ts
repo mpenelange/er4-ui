@@ -6,7 +6,7 @@
 //   er4.offload              ER-4 plugin (already in core)
 //
 // Scenarios (see ../scenario.ts): many = extra VLANs + a dedicated port with no link;
-// empty = no networks at all; fresh = factory defaults (lan on eth1, no bridge); error = interface dump times out; staged = a new "guest"
+// empty = no networks at all; fresh = factory defaults (lan on lan1, no bridge); error = interface dump times out; staged = a new "guest"
 // network staged by the wizard but not applied; loading = interface dump never returns.
 import { UBUS_STATUS, UbusError } from '../../ubus'
 import type { UciConfig, UciSection } from '../../types'
@@ -22,14 +22,14 @@ function put(c: UciConfig, type: string, name: string, opts: Record<string, stri
 function seedMany(cfg: Record<string, UciConfig>) {
   const n = cfg.network, d = cfg.dhcp, f = cfg.firewall
   const br = Object.values(n).find((s) => s.type === 'bridge')!
-  br.ports = ['eth1', 'eth3']
+  br.ports = ['lan1', 'lan3']
   put(n, 'device', 'guest_dev', { type: '8021q', ifname: 'br-lan', vid: '20', name: 'br-lan.20' })
   put(n, 'interface', 'guest', { device: 'br-lan.20', proto: 'static', ipaddr: '192.168.20.1', netmask: '255.255.255.0' })
-  put(n, 'interface', 'lab', { device: 'eth2', proto: 'static', ipaddr: '10.10.0.1', netmask: '255.255.255.0', mtu: '9000' })
-  put(n, 'device', 'cams_dev', { type: '8021q', ifname: 'eth3', vid: '40', name: 'eth3.40' })
-  put(n, 'interface', 'cams', { device: 'eth3.40', proto: 'static', ipaddr: '192.168.40.1', netmask: '255.255.255.0' })
-  put(n, 'device', 'mgmt_dev', { type: '8021q', ifname: 'eth3', vid: '99', name: 'eth3.99' })
-  put(n, 'interface', 'mgmt', { device: 'eth3.99', proto: 'static', ipaddr: '172.16.99.1', netmask: '255.255.255.0' })
+  put(n, 'interface', 'lab', { device: 'lan2', proto: 'static', ipaddr: '10.10.0.1', netmask: '255.255.255.0', mtu: '9000' })
+  put(n, 'device', 'cams_dev', { type: '8021q', ifname: 'lan3', vid: '40', name: 'lan3.40' })
+  put(n, 'interface', 'cams', { device: 'lan3.40', proto: 'static', ipaddr: '192.168.40.1', netmask: '255.255.255.0' })
+  put(n, 'device', 'mgmt_dev', { type: '8021q', ifname: 'lan3', vid: '99', name: 'lan3.99' })
+  put(n, 'interface', 'mgmt', { device: 'lan3.99', proto: 'static', ipaddr: '172.16.99.1', netmask: '255.255.255.0' })
   put(d, 'dhcp', 'guest', { interface: 'guest', start: '50', limit: '200', leasetime: '2h' })
   put(d, 'dhcp', 'lab', { interface: 'lab', start: '100', limit: '50', leasetime: '12h' })
   put(d, 'dhcp', 'cams', { interface: 'cams', start: '10', limit: '40', leasetime: '7d' })
@@ -49,11 +49,11 @@ function seedEmpty(cfg: Record<string, UciConfig>) {
   for (const [k, s] of Object.entries(cfg.dhcp)) if (s['.type'] === 'dhcp') delete cfg.dhcp[k]
 }
 
-/** A freshly flashed router (board.d/01_network): lan on eth1 alone, no bridge, eth2/eth3
+/** A freshly flashed router (board.d/01_network): lan on lan1 alone, no bridge, lan2/lan3
  *  unassigned, no extra networks or VPN. The ER-4 has no switch chip, so ports aren't bridged. */
 function seedFresh(cfg: Record<string, UciConfig>) {
   for (const [k, s] of Object.entries(cfg.network)) if (s['.type'] === 'device' || s['.type'].startsWith('wireguard_') || k === 'iot' || k === 'wg0') delete cfg.network[k]
-  cfg.network.lan.device = 'eth1'
+  cfg.network.lan.device = 'lan1'
   delete cfg.dhcp.iot
   for (const [k, s] of Object.entries(cfg.firewall)) {
     if ((s['.type'] === 'zone' && (s.name === 'iot' || s.name === 'vpn')) || (s['.type'] === 'forwarding' && (s.src === 'iot' || s.src === 'vpn'))
@@ -61,7 +61,7 @@ function seedFresh(cfg: Record<string, UciConfig>) {
   }
 }
 
-const NO_LINK = sc === 'many' ? new Set(['eth2']) : sc === 'fresh' ? new Set(['eth2', 'eth3']) : new Set<string>()
+const NO_LINK = sc === 'many' ? new Set(['lan2']) : sc === 'fresh' ? new Set(['lan2', 'lan3']) : new Set<string>()
 
 afterCore(() => {
   const clone = <T>(v: T): T => JSON.parse(JSON.stringify(v))
@@ -81,7 +81,7 @@ afterCore(() => {
     const devs = Object.values(st.live.network).filter((s) => s['.type'] === 'device')
     if (!devs.some((s) => s.name === 'br-lan.30')) delete all['br-lan.30']
     // a PPPoE session has its own device, carrying the WAN's traffic
-    if (st.live.network.wan?.proto === 'pppoe' && all.eth0) all['pppoe-wan'] = { ...all.eth0, type: 'Network device', macaddr: '', speed: '-1' }
+    if (st.live.network.wan?.proto === 'pppoe' && all.lan0) all['pppoe-wan'] = { ...all.lan0, type: 'Network device', macaddr: '', speed: '-1' }
     for (const s of devs) {
       if (s.type !== '8021q') continue
       const parent = all[String(s.ifname)]

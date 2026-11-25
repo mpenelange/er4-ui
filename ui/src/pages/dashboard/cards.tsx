@@ -18,14 +18,14 @@ function Loading() {
 }
 
 // ---- WAN ---------------------------------------------------------------------------------
-export function WanCard({ ifaces, dns, eth0, rate, error }: { ifaces?: NetInterface[]; dns?: DnsModel; eth0?: DeviceStatus; rate?: Rate['ports'][string]; error?: Error }) {
+export function WanCard({ ifaces, dns, lan0, rate, error }: { ifaces?: NetInterface[]; dns?: DnsModel; lan0?: DeviceStatus; rate?: Rate['ports'][string]; error?: Error }) {
   const wan = ifaces?.find((i) => i.interface === 'wan')
   const wan6 = ifaces?.find((i) => i.interface === 'wan6')
   const gw = wan?.route?.find((r) => r.target === '0.0.0.0' && r.mask === 0)?.nexthop
   const v4 = wan?.['ipv4-address']?.[0]
   const v6 = wan6?.['ipv6-address']?.[0]
   const pfx = wan6?.['ipv6-prefix']?.[0]
-  const carrier = eth0?.carrier
+  const carrier = lan0?.carrier
   // what dnsmasq forwards to, not just what the ISP offered
   const isp = wan?.['dns-server'] ?? []
   const used = dns ? resolvers(dns, isp) : isp.map((s) => ({ s, isp: true }))
@@ -48,8 +48,8 @@ export function WanCard({ ifaces, dns, eth0, rate, error }: { ifaces?: NetInterf
           {!wan.up && (
             <p class="wan-hint">
               {carrier === false
-                ? 'eth0 has no link: check the cable to the modem/ONT, and that the modem is powered.'
-                : `Waiting for ${wan.proto.toUpperCase()} on eth0…`}
+                ? 'lan0 has no link: check the cable to the modem/ONT, and that the modem is powered.'
+                : `Waiting for ${wan.proto.toUpperCase()} on lan0…`}
             </p>
           )}
           <KV rows={[
@@ -65,9 +65,9 @@ export function WanCard({ ifaces, dns, eth0, rate, error }: { ifaces?: NetInterf
             pfx && ['IPv6 prefix', <span class="mono">{pfx.address}/{pfx.mask}</span>, `${pfx.address}/${pfx.mask}`],
             ['Protocol', <>{wan.proto.toUpperCase()}{wan6 ? <span class="muted"> · {wan6.proto.toUpperCase()}</span> : null}</>],
             ['Uptime', wan.up && wan.uptime != null ? duration(wan.uptime) : dash],
-            ['Link', <span class="mono">{wan.l3_device ?? wan.device} <span class="muted">{eth0 ? linkSpeed(eth0.carrier ? eth0.speed : undefined) : ''}</span></span>],
+            ['Link', <span class="mono">{wan.l3_device ?? wan.device} <span class="muted">{lan0 ? linkSpeed(lan0.carrier ? lan0.speed : undefined) : ''}</span></span>],
             ['Now', wan.up && rate ? <span class="num">↓ {bps(rate.rxBps)} <span class="muted">·</span> ↑ {bps(rate.txBps)}</span> : dash],
-            ['Since boot', eth0 ? <span class="num">↓ {bytes(eth0.statistics.rx_bytes)} <span class="muted">·</span> ↑ {bytes(eth0.statistics.tx_bytes)}</span> : dash],
+            ['Since boot', lan0 ? <span class="num">↓ {bytes(lan0.statistics.rx_bytes)} <span class="muted">·</span> ↑ {bytes(lan0.statistics.tx_bytes)}</span> : dash],
           ]} />
         </>
       )}

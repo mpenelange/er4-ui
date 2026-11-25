@@ -4,7 +4,7 @@
 //   network.device.status             netifd
 //   luci-rpc.getDHCPLeases            luci-base (rpcd-mod-luci)
 //   uci.*                             rpcd built-in (apply with rollback + confirm)
-//   er4.stats / er4.offload           ER-4 rpcd plugin (openwrt/package/utils/er4-ui, see ui/README.md)
+//   er4.stats / er4.offload           the er4 rpcd plugin (package/files/er4.uc)
 
 export interface BoardInfo {
   hostname: string
@@ -97,15 +97,24 @@ export interface Er4Stats {
   conntrack: { count: number; max: number }
 }
 
+/** er4.offload: kmod-octeon-offload (/proc/octeon_offload) and fw4's flowtable settings */
 export interface Er4Offload {
+  /** the module is loaded */
   loaded: boolean
-  ipv4: boolean
-  ipv6: boolean
-  vlan: boolean
-  pppoe: boolean
-  stats: boolean
-  cache_size: number
-  fwd_queue_depth: number
+  /** the kernel has the driver hooks (OpenWrt octeon patch 703); without them nothing is offloaded */
+  hooks: boolean
+  /** fw4 flow_offloading: OpenWrt's software flowtable */
+  software: boolean
+  /** fw4 flow_offloading_hw (and software on): hands flows to the module */
+  hardware: boolean
+  /** ports the module is bound on; should equal ports_wanted.length */
+  ports: number
+  /** the router's ports in fw4's flowtable */
+  ports_wanted: string[]
+  flows: number
+  max_flows: number
+  /** everything /proc/octeon_offload reports */
+  counters: Record<string, number | string>
 }
 
 // uci

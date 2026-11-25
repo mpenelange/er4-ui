@@ -57,7 +57,7 @@ function simulate() {
   // WAN download with a slow wave plus bursts; uploads smaller; LAN mirrors WAN
   const down = 1e6 * (180 + 140 * Math.sin(t / 23) + (Math.sin(t / 3.7) > 0.93 ? 420 : 0) + 30 * Math.random())
   const up = 1e6 * (25 + 15 * Math.sin(t / 17) + 10 * Math.random())
-  const lanShare = { eth1: 0.55, eth2: 0.35, eth3: 0.1 } as const
+  const lanShare = { lan1: 0.55, lan2: 0.35, lan3: 0.1 } as const
   const add = (p: string, rxBits: number, txBits: number) => {
     const c = counters[p]
     c.rx_bytes += (rxBits / 8) * dt
@@ -66,7 +66,7 @@ function simulate() {
     c.tx_packets += (txBits / 8 / 900) * dt
     if (Math.random() < 0.02) c.rx_dropped += 1
   }
-  add('eth0', down, up)
+  add('lan0', down, up)
   for (const [p, share] of Object.entries(lanShare)) add(p, up * share, down * share)
   const pps = (down + up) / 8 / 900
   flows.flow_found += pps * 0.985 * dt
@@ -240,16 +240,16 @@ const core: Record<string, Record<string, MockHandler>> = {
           // no credentials, no session: pppd keeps retrying (netifd: pending, not up)
           const ok = !!s.username && !!s.password
           out.push(iface(name, ok
-            ? { proto: 'pppoe', device: String(s.device ?? 'eth0'), l3_device: 'pppoe-wan', 'ipv4-address': [{ address: '100.64.12.34', mask: 32 }], route: [{ target: '0.0.0.0', mask: 0, nexthop: '100.64.0.1' }], 'dns-server': ['100.64.0.53'] }
-            : { proto: 'pppoe', device: String(s.device ?? 'eth0'), up: false, pending: true, 'ipv4-address': undefined, route: undefined, 'dns-server': undefined, errors: [{ subsystem: 'pppoe', code: 'AUTH_FAILED' }] }))
+            ? { proto: 'pppoe', device: String(s.device ?? 'lan0'), l3_device: 'pppoe-wan', 'ipv4-address': [{ address: '100.64.12.34', mask: 32 }], route: [{ target: '0.0.0.0', mask: 0, nexthop: '100.64.0.1' }], 'dns-server': ['100.64.0.53'] }
+            : { proto: 'pppoe', device: String(s.device ?? 'lan0'), up: false, pending: true, 'ipv4-address': undefined, route: undefined, 'dns-server': undefined, errors: [{ subsystem: 'pppoe', code: 'AUTH_FAILED' }] }))
         }
         else if (name === 'wan')
-          out.push(iface(name, { proto: String(s.proto ?? 'dhcp'), device: 'eth0', l3_device: 'eth0', 'ipv4-address': [{ address: '203.0.113.57', mask: 24 }], route: [{ target: '0.0.0.0', mask: 0, nexthop: '203.0.113.1' }], 'dns-server': ['203.0.113.2', '203.0.113.3'] }))
+          out.push(iface(name, { proto: String(s.proto ?? 'dhcp'), device: 'lan0', l3_device: 'lan0', 'ipv4-address': [{ address: '203.0.113.57', mask: 24 }], route: [{ target: '0.0.0.0', mask: 0, nexthop: '203.0.113.1' }], 'dns-server': ['203.0.113.2', '203.0.113.3'] }))
         else if (s.proto === 'dhcpv6') {
           // the ISP delegates a /56 unless a smaller one is asked for (reqprefix)
           const want = Number(s.reqprefix) || 56
           out.push(iface(name, {
-            proto: 'dhcpv6', device: String(s.device ?? 'eth0'), l3_device: String(s.device ?? 'eth0').replace(/^@/, '') === 'wan' ? 'eth0' : String(s.device ?? 'eth0'),
+            proto: 'dhcpv6', device: String(s.device ?? 'lan0'), l3_device: String(s.device ?? 'lan0').replace(/^@/, '') === 'wan' ? 'lan0' : String(s.device ?? 'lan0'),
             'ipv6-address': s.reqaddress === 'none' ? [] : [{ address: '2001:db8:ffff::57', mask: 128 }],
             'ipv6-prefix': s.reqprefix === 'no' ? [] : [{ address: '2001:db8:4a10:100::', mask: Math.max(want, 48), class: name, assigned: {} }],
             route: [{ target: '::', mask: 0, nexthop: 'fe80::1', source: '::/0' }], 'dns-server': ['2001:db8:ffff::53'],
@@ -278,20 +278,20 @@ const core: Record<string, Record<string, MockHandler>> = {
       simulate()
       const dev = (p: keyof typeof ports) => ({
         type: 'Network device', up: true, carrier: ports[p].carrier, speed: ports[p].speed, macaddr: ports[p].mac, mtu: 1500,
-        // eth3 (SFP) reports no PHY details; eth2 has a flaky cable: CRC errors
-        ...(p !== 'eth3' && {
+        // lan3 (SFP) reports no PHY details; lan2 has a flaky cable: CRC errors
+        ...(p !== 'lan3' && {
           autoneg: true, 'link-advertising': ['10baseT-H', '10baseT-F', '100baseT-H', '100baseT-F', '1000baseT-F'],
           'link-partner-advertising': ports[p].carrier ? ['10baseT-H', '10baseT-F', '100baseT-H', '100baseT-F', '1000baseT-F'] : [],
           'flow-control': { autoneg: true, negotiated: ports[p].carrier ? ['rx', 'tx'] : [] },
         }),
-        statistics: { ...round(counters[p]), rx_errors: p === 'eth2' ? 37 : 0, tx_errors: 0, multicast: 0,
-          rx_crc_errors: p === 'eth2' ? 37 : 0, rx_frame_errors: 0, rx_length_errors: 0, rx_missed_errors: 0, rx_over_errors: 0, rx_fifo_errors: 0, tx_carrier_errors: 0, collisions: 0 },
+        statistics: { ...round(counters[p]), rx_errors: p === 'lan2' ? 37 : 0, tx_errors: 0, multicast: 0,
+          rx_crc_errors: p === 'lan2' ? 37 : 0, rx_frame_errors: 0, rx_length_errors: 0, rx_missed_errors: 0, rx_over_errors: 0, rx_fifo_errors: 0, tx_carrier_errors: 0, collisions: 0 },
       })
       const all: Record<string, unknown> = Object.fromEntries((Object.keys(ports) as (keyof typeof ports)[]).map((p) => [p, dev(p)]))
       const bridge = Object.values(st.live.network).find((x) => x['.type'] === 'device' && x.type === 'bridge')
-      all['br-lan'] = { ...dev('eth1'), type: 'bridge', 'bridge-members': bridge?.ports ?? [] }
-      all['br-lan.30'] = { ...dev('eth1'), type: 'VLAN' }
-      all['wg0'] = { ...dev('eth2'), type: 'Network device', speed: '-1', macaddr: '' }
+      all['br-lan'] = { ...dev('lan1'), type: 'bridge', 'bridge-members': bridge?.ports ?? [] }
+      all['br-lan.30'] = { ...dev('lan1'), type: 'VLAN' }
+      all['wg0'] = { ...dev('lan2'), type: 'Network device', speed: '-1', macaddr: '' }
       return name ? all[name as string] ?? fail('network.device', 'status', UBUS_STATUS.NOT_FOUND) : all
     },
   },
@@ -312,10 +312,13 @@ const core: Record<string, Record<string, MockHandler>> = {
       }
     },
     offload: () => {
-      const o = st.live.offload.global
+      const d = st.live.firewall.cfg01e63d
+      const software = d.flow_offloading === '1'
+      const f = round(flows) as { flow_found: number; flow_not_found: number; invalidations: number }
       return {
-        loaded: o.enabled === '1', ipv4: o.ipv4 === '1', ipv6: o.ipv6 === '1', vlan: o.vlan === '1', pppoe: o.pppoe === '1',
-        stats: o.stats === '1', cache_size: 8192, fwd_queue_depth: 128,
+        loaded: true, hooks: true, software, hardware: software && d.flow_offloading_hw === '1',
+        ports: 4, ports_wanted: ['lan0', 'lan1', 'lan2', 'lan3'], flows: 212, max_flows: 16384,
+        counters: { driver_hooks: 'yes', forwarded: f.flow_found, no_flow: f.flow_not_found, tx_errors: 0, flows_removed: f.invalidations, refused_ipv6_nat: 3 },
       }
     },
   },

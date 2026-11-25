@@ -6,6 +6,7 @@ import { Meter } from '../../components/readouts'
 import { Badge, Button, Card, ErrorBox, Field } from '../../components/ui'
 import type { Status } from '../../components/ui'
 import { HttpsCard } from './https'
+import { FEATURES } from '../../features'
 
 /** Rough strength: length + character classes, penalising repeats. 0..4. */
 function strength(pw: string): { score: number; word: string; status?: Status } {
@@ -81,7 +82,7 @@ export function Admin() {
           </div>
         </form>
       </Card>
-      <HttpsCard />
+      {FEATURES.https && <HttpsCard />}
       <Card title="Sessions & access">
         <ul class="plain-list">
           <li><span class="secondary">Logged-in sessions stay valid after a password change until they expire (1 h idle) or you log out.</span></li>

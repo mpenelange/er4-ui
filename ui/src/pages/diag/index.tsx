@@ -254,8 +254,8 @@ function Tools() {
 /** tcpdump on the router into a .pcap for Wireshark; bounded by time, packets and 20 MB. */
 function Capture() {
   const ifaces = useAsync(() => router.interfaces().catch(() => []), [], [])
-  const devs = [...new Set(['eth0', 'eth1', 'eth2', 'eth3', ...(ifaces.data ?? []).map((i) => i.l3_device).filter((x): x is string => !!x)])].sort()
-  const [iface, setIface] = useState('eth0')
+  const devs = [...new Set(['lan0', 'lan1', 'lan2', 'lan3', ...(ifaces.data ?? []).map((i) => i.l3_device).filter((x): x is string => !!x)])].sort()
+  const [iface, setIface] = useState('lan0')
   const [filter, setFilter] = useState('')
   const [secs, setSecs] = useState('30')
   const [st, setSt] = useState<CaptureStatus | null>(null)
@@ -423,12 +423,8 @@ function Connections() {
       const st = CT_STATUS[w]
       const label = w.toLowerCase().replace('_', ' ')
       const o = c.offload
-      if (o) {
-        // in the hardware offload's flow cache: one badge says so, the hover says which ports
-        const via = (x?: { in: string; out: string }) => (x ? `${x.in} → ${x.out}` : 'CPU')
-        return <span title={`${label}, offloaded in hardware. Outbound: ${via(o.orig)}. Return: ${via(o.reply)}.`}>
-          <Badge status="good">{o.orig && o.reply ? 'offloaded' : o.orig ? 'offloaded ↑' : 'offloaded ↓'}</Badge></span>
-      }
+      if (o === 'hw') return <span title={`${label}, forwarded by the hardware fast path (kmod-octeon-offload)`}><Badge status="good">offloaded</Badge></span>
+      if (o === 'sw') return <span title={`${label}, in OpenWrt's software flowtable: the hardware fast path didn't take it (PPPoE, IPv6 NAT, a tunnel, or a port it doesn't drive)`}><Badge status="accent">flowtable</Badge></span>
       const why = d?.offload !== undefined ? slowPathReason(c, d.offload, local) : null
       return <span title={why ? `On the CPU: ${why}` : undefined}>
         {st ? <Badge status={st}>{label}</Badge> : <span class="muted">{label || 'cpu'}</span>}</span>

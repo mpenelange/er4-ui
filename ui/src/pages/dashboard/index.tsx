@@ -55,7 +55,7 @@ export default function Dashboard(_props: PageProps) {
             <FrontPanel devices={dev} roles={roles} latest={live.latest} />
           )}
         </Card>
-        <div class="span-4"><WanCard ifaces={ifaces.samples[0]} dns={dhcp.data && dnsModel(dhcp.data, [])} eth0={dev?.eth0} rate={live.latest?.ports.eth0} error={!ifaces.samples[0] ? ifaces.error : undefined} /></div>
+        <div class="span-4"><WanCard ifaces={ifaces.samples[0]} dns={dhcp.data && dnsModel(dhcp.data, [])} lan0={dev?.lan0} rate={live.latest?.ports.lan0} error={!ifaces.samples[0] ? ifaces.error : undefined} /></div>
 
         <div class="span-12"><Throughput /></div>
 

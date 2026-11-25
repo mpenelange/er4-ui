@@ -1,13 +1,13 @@
 // The ER-4 ports as a row of tiles, the same look as the dashboard's: name, role, the networks
 // the port carries (swatch + name; tagged ones say "VLAN n"), link state. Each port a button.
 //   <PortPanel ports={ER4_PORTS.map((p) => ({ ...p, link: true, speed: '1000F', role: 'WAN' }))}
-//              selected="eth0" onSelect={(name) => go('network', 'port', name)} />
+//              selected="lan0" onSelect={(name) => go('network', 'port', name)} />
 // Swatch colours are network identities (series slots); the text always carries the meaning.
 import { linkSpeed } from './format'
 import './ports.css'
 
 export const ER4_PORTS: { name: string; sfp?: boolean }[] = [
-  { name: 'eth0' }, { name: 'eth1' }, { name: 'eth2' }, { name: 'eth3', sfp: true },
+  { name: 'lan0' }, { name: 'lan1' }, { name: 'lan2' }, { name: 'lan3', sfp: true },
 ]
 
 export interface PortView {

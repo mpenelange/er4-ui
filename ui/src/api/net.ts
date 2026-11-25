@@ -3,12 +3,12 @@
 // delete network). Everything here only stages (uci.set/add/remove); nothing is applied.
 //
 // VLAN model (ER-4, Cavium SDK ethernet, no DSA switch): VLANs are 802.1Q devices
-// (`config device` type 8021q, ifname = a port or a bridge, vid) such as eth3.30 or br-lan.30.
+// (`config device` type 8021q, ifname = a port or a bridge, vid) such as lan3.30 or br-lan.30.
 // A VLAN on a bridge is carried tagged on every bridge member port. No bridge-vlan filtering.
 import { uci } from './uci'
 import type { UciConfig, UciSection, UciValue } from './types'
 
-export const PORT_NAMES = ['eth0', 'eth1', 'eth2', 'eth3'] as const
+export const PORT_NAMES = ['lan0', 'lan1', 'lan2', 'lan3'] as const
 export type PortName = (typeof PORT_NAMES)[number]
 export const isPort = (s: string | undefined): s is PortName => !!s && (PORT_NAMES as readonly string[]).includes(s)
 
@@ -121,7 +121,7 @@ export function buildModel(network: UciConfig, dhcp: UciConfig, firewall: UciCon
     if (!device) return ['wireguard', 'ppp', 'pppoe', 'gre', 'vti', '6in4', '6rd', '6to4'].includes(proto) ? { kind: 'virtual' } : { kind: 'none' }
     const v = vlans.find((x) => x.name === device)
     if (v) return { kind: 'vlan', parent: v.parent, vid: v.vid, device, section: v.section }
-    const m = /^(.+)\.(\d+)$/.exec(device) // netifd creates eth0.7-style VLAN devices on demand
+    const m = /^(.+)\.(\d+)$/.exec(device) // netifd creates lan0.7-style VLAN devices on demand
     if (m) return { kind: 'vlan', parent: m[1], vid: Number(m[2]), device }
     if (bridges.some((b) => b.name === device)) return { kind: 'bridge', bridge: device }
     return { kind: 'port', port: device }

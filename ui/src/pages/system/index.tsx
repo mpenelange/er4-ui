@@ -16,6 +16,7 @@ import { Firmware } from './firmware'
 import { General } from './general'
 import { Maintenance } from './maintenance'
 import { Offload } from './offload'
+import { FEATURES } from '../../features'
 import './system.css'
 
 const TABS = [
@@ -28,14 +29,15 @@ const TABS = [
   { id: 'firmware', label: 'Firmware' },
   { id: 'maintenance', label: 'Backup & reboot' },
 ] as const
+const SHOWN = TABS.filter((t) => t.id !== 'firmware' || FEATURES.firmware)
 
 export default function System({ path }: PageProps) {
   // Sub-route; tolerate a "?scenario=…" query in the hash (mock flags)
   const sub = (path[0] ?? 'general').split('?')[0]
-  const tab = TABS.find((t) => t.id === sub)?.id ?? 'general'
+  const tab = SHOWN.find((t) => t.id === sub)?.id ?? 'general'
   const board = useAsync(router.board, [], [])
   const sysStaged = useStaged('system')
-  const offStaged = useStaged('offload')
+  const offStaged = useStaged('firewall')
   const sshStaged = useStaged('dropbear')
   const dot = <span class="tab-dot" title="unapplied changes" />
   return (
@@ -45,7 +47,7 @@ export default function System({ path }: PageProps) {
         <MockMenu />
         <RebootButton />
       </PageHead>
-      <Tabs active={tab} tabs={TABS.map((t) => ({
+      <Tabs active={tab} tabs={SHOWN.map((t) => ({
         id: t.id, label: t.label, href: `#/system/${t.id}`,
         badge: (t.id === 'general' && sysStaged.any) || (t.id === 'offload' && offStaged.any) || (t.id === 'ssh' && sshStaged.any) ? dot : undefined,
       }))} />

@@ -33,7 +33,7 @@ const STEPS = ['Name', 'Where', 'Addressing', 'DHCP', 'Firewall', 'Review'] as c
 export function Wizard({ d, m, preset, onClose }: { d: NetData; m: NetModel; preset: string[]; onClose: () => void }) {
   const lanBridge = m.bridges[0]?.name
   const initWhere: WhereKind = preset[0] === 'port' ? 'port' : preset[0] === 'vlan' && preset[1] && isPort(preset[1]) ? 'portvlan' : lanBridge ? 'bridge' : 'portvlan'
-  const initPort = (isPort(preset[1]) ? preset[1] : m.ports.find((p) => p.role === 'unused')?.name ?? 'eth3') as PortName
+  const initPort = (isPort(preset[1]) ? preset[1] : m.ports.find((p) => p.role === 'unused')?.name ?? 'lan3') as PortName
 
   const [step, setStep] = useState(0)
   const [name, setName] = useState('')

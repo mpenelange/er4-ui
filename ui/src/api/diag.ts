@@ -61,24 +61,23 @@ export interface Conn {
   mark?: string
   /** conntrack helper (ftp, sip…): such flows stay on the CPU */
   helper?: string
-  /** the direction(s) in the hardware offload's flow cache right now; age in ms since learned */
-  offload?: { orig?: OffloadDir; reply?: OffloadDir }
+  /** taken over by OpenWrt's flowtable: 'hw' when kmod-octeon-offload forwards it in hardware,
+   * 'sw' when only the software flowtable has it (conntrack's HW_OFFLOAD / OFFLOAD flags) */
+  offload?: 'hw' | 'sw'
 }
-export interface OffloadDir { in: string; out: string; age: number }
-/** offload: null when the offload module isn't loaded (no per-flow state) */
-export interface ConntrackReply { count: number; max: number; offload?: { ipv4: boolean; ipv6: boolean } | null; flows: Conn[] }
+/** offload: fw4's flow offloading settings (hardware: on and the module loaded) */
+export interface ConntrackReply { count: number; max: number; offload?: { software: boolean; hardware: boolean } | null; flows: Conn[] }
 
-/** Why a connection isn't in the offload flow cache, as far as the router can tell (null: it is). */
+/** Why a connection isn't offloaded, as far as the router can tell (null: it is). */
 export function slowPathReason(c: Conn, off: ConntrackReply['offload'], local: (ip: string) => boolean): string | null {
-  if (c.offload?.orig || c.offload?.reply) return null
-  if (!off) return 'Hardware offload is off'
-  if (!(c.family === 6 ? off.ipv6 : off.ipv4)) return `IPv${c.family} offload is off`
+  if (c.offload) return null
+  if (!off?.software) return 'Flow offloading is off'
   if (local(c.dst) || local(c.src)) return 'To or from the router itself: never offloaded'
   if (c.proto !== 'tcp' && c.proto !== 'udp') return 'Only TCP and UDP are offloaded'
   if (c.helper) return `Uses the ${c.helper} helper: stays on the CPU`
   if (c.proto === 'tcp' && c.state !== 'ESTABLISHED') return 'TCP is offloaded once established'
   if (c.flags.includes('UNREPLIED')) return 'No reply yet'
-  return 'Idle for over ~16 s, or a firewall rule that inspects every packet (limit, log, …) keeps it on the CPU'
+  return 'Not taken over by the flowtable (yet), or it timed out after going idle'
 }
 
 /** One bucket of er4-wanmon samples: mean RTT of the replies (null: none), loss 0..1. */

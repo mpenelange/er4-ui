@@ -1,6 +1,6 @@
 // Mock scenarios: switch the mock router into edge states to check every screen state.
 // Set with a query flag in the URL or in the hash (so screenshots can set it per route):
-//   ?mock&scenario=wan-down,eth2-nolink        #/dashboard?scenario=stats-error
+//   ?mock&scenario=wan-down,lan2-nolink        #/dashboard?scenario=stats-error
 // or from the dev menu (stored in localStorage 'er4.mock.scenario'). Read on every call, so
 // switching takes effect on the next poll.
 import { mockUci, objects, type MockHandler } from './registry'
@@ -8,8 +8,8 @@ import type { UciConfig, UciSection, UciValue } from '../types'
 
 export const SCENARIOS = {
   'wan-down': 'WAN has no carrier, no lease',
-  'eth2-nolink': 'eth2 unplugged',
-  'eth3-100m': 'SFP negotiated 100M half',
+  'lan2-nolink': 'lan2 unplugged',
+  'lan3-100m': 'SFP negotiated 100M half',
   'stats-error': 'er4.stats fails (plugin missing)',
   slow: 'every call takes ~1.5 s (loading states)',
   'offload-off': 'offload module not loaded',
@@ -21,7 +21,7 @@ export const SCENARIOS = {
   'no-previous': 'no previous image kept',
   // network/devices states (one at a time, see netScenario)
   empty: 'no devices, leases or extra networks',
-  fresh: 'factory defaults: lan on eth1 only, eth2/eth3 unassigned, no bridge',
+  fresh: 'factory defaults: lan on lan1 only, lan2/lan3 unassigned, no bridge',
   many: '~60 devices, several VLANs, a dedicated port',
   error: 'interface dump and lease reads fail',
   staged: 'some changes staged at startup',
