@@ -1,0 +1,3 @@
+# acme.sh issued or renewed a certificate: serve the web UI with it (see /usr/libexec/er4-https).
+# Sourced by hotplug-call, so no exit here.
+case $ACTION in issued|renewed) /usr/libexec/er4-https use ;; esac

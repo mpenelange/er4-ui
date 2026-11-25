@@ -1,0 +1,27 @@
+#!/bin/sh
+# The web UI's HTTPS certificate (System > Admin > HTTPS certificate; er4.acme_* in er4.uc).
+# acme.sh gets a Let's Encrypt certificate for the domain in acme.er4 (DNS-01 through
+# Cloudflare) and links it into /etc/ssl/acme; this points uhttpd at it.
+#   er4-https use   serve the acme.er4 certificate, if it has been issued (also run by
+#                   /etc/hotplug.d/acme/90-er4-https after each issue and renewal)
+#   er4-https off   back to uhttpd's own self-signed certificate
+set -f
+case $1 in
+use)
+	[ "$(uci -q get acme.er4)" = cert ] || exit 0
+	set -- $(uci -q get acme.er4.domains)
+	crt=/etc/ssl/acme/$1.fullchain.crt key=/etc/ssl/acme/$1.key
+	[ -s "$crt" ] && [ -s "$key" ] || exit 0
+	;;
+off)
+	crt=/etc/uhttpd.crt key=/etc/uhttpd.key
+	;;
+*)
+	echo "usage: $0 use|off" >&2; exit 2
+	;;
+esac
+# restart even when the paths are unchanged: a renewal replaces the files behind them
+uci set uhttpd.main.cert="$crt"
+uci set uhttpd.main.key="$key"
+uci commit uhttpd
+/etc/init.d/uhttpd restart
