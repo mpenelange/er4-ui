@@ -13,6 +13,8 @@ import { Badge, Button, Card, ErrorBox, Modal, Table, Toggle } from '../../compo
 import { MultiChips } from '../../components/chips'
 import { CopyButton } from '../../components/copy'
 import type { VpnData } from './shared'
+import { VpnSetupCard, reachableZones } from './setup-card'
+import { useInstall } from '../../components/install'
 
 const ADMIN = 'https://login.tailscale.com/admin/machines'
 
@@ -21,7 +23,9 @@ export function TailscaleCard({ data }: { data: VpnData }) {
   const st = poll.samples[0]
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<unknown>()
-  // set up while Tailscale was still downloading: log in once it's there
+  const [reach, setReach] = useState<string[]>()
+  const pkg = useInstall('tailscale')
+  // set up while Tailscale was still installing: log in once it's there
   const [pendingUp, setPendingUp] = useState<TsSettings>()
   const run = async (f: () => Promise<unknown>) => {
     setBusy(true)
@@ -46,12 +50,23 @@ export function TailscaleCard({ data }: { data: VpnData }) {
   const badge = { off: <Badge>off</Badge>, on: <span title="Direct connections use UDP 41641 (opened on the WAN). Tailscale runs on the CPU (userspace WireGuard), not the hardware offload."><Badge status="good">connected</Badge></span>, login: <Badge status="warning">waiting for login</Badge>,
     approve: <Badge status="warning">waiting for approval</Badge>, out: <Badge>logged out</Badge> }[state]
 
+  if (!wired) {
+    const inside = reachableZones(zonesOf(data.fw))
+    const r = reach ?? (inside.some((z) => z.name === 'lan') ? ['lan'] : [])
+    return (
+      <VpnSetupCard title="Tailscale" name="Tailscale"
+        intro="Join this router to your tailnet: reach home from your other Tailscale devices, or send their internet traffic through home (exit node)."
+        zones={inside} reach={r} onReach={setReach} busy={busy}
+        onSetUp={() => run(async () => { await stageTailscale(data.net, data.fw, r); await start(settings) })}
+        installing={dl === 'downloading' ? pkg.last ?? '' : undefined} failedLog={dl === 'error' ? pkg.log : undefined} error={err ?? (dl === 'error' ? `Couldn't install Tailscale: ${dlError}` : undefined)}
+        note="Installs OpenWrt's tailscale package, then opens Tailscale's login page. The network and firewall changes are staged until you apply." />
+    )
+  }
   return (
     <Card title={<span class="row">Tailscale {data.staged.has('tailscale') && <Badge status="accent">unapplied</Badge>}</span>} actions={badge}>
       <div class="stack">
         {err != null && <ErrorBox error={err} />}
-        {!wired ? <SetUp data={data} busy={busy} dl={dl} dlError={dlError} onSetUp={(reach) => run(async () => { await stageTailscale(data.net, data.fw, reach); await start(settings) })} />
-          : dl ? <Download dl={dl} error={dlError} busy={busy} onStart={() => run(() => start(settings))} />
+        {dl ? <Download dl={dl} error={dlError} busy={busy} onStart={() => run(() => start(settings))} />
           : state === 'off' || state === 'out' ? (
             <div class="row">
               <span class="secondary">This router isn't on your tailnet.</span>
@@ -84,25 +99,6 @@ function Download({ dl, error, busy, onStart }: { dl: Download; error?: string; 
       {dl === 'error' ? <span class="warn-line">Couldn't install Tailscale: {error}</span> : <span class="secondary">Tailscale isn't on this router yet. It's installed from the OpenWrt package repository.</span>}
       <span style={{ flex: 1 }} />
       <Button variant="primary" disabled={busy} onClick={onStart}>{dl === 'error' ? 'Try again' : 'Install'}</Button>
-    </div>
-  )
-}
-
-function SetUp({ data, busy, dl, dlError, onSetUp }: { data: VpnData; busy: boolean; dl?: Download; dlError?: string; onSetUp: (reach: string[]) => void }) {
-  const inside = zonesOf(data.fw).filter((z) => !z.masq && z.name !== 'tailscale')
-  const [reach, setReach] = useState<string[]>(inside.some((z) => z.name === 'lan') ? ['lan'] : [])
-  return (
-    <div class="stack">
-      <span class="secondary">Join this router to your tailnet: reach home from your other Tailscale devices, or use home as an exit node.</span>
-      <div class="row" style={{ flexWrap: 'wrap' }}>
-        <span class="muted small">Tailnet may reach</span>
-        <MultiChips value={reach} onChange={setReach} label="Zones the tailnet may reach" options={inside.map((z) => ({ value: z.name, label: z.name, slot: z.slot }))} />
-        <span style={{ flex: 1 }} />
-        <Button variant="primary" disabled={busy || dl === 'downloading'} onClick={() => onSetUp(reach)}>Set up Tailscale</Button>
-      </div>
-      {dl === 'downloading' && <Download dl={dl} busy={busy} onStart={() => {}} />}
-      {dl === 'error' && <span class="warn-line">Couldn't install Tailscale: {dlError}</span>}
-      {dl === 'none' && <span class="muted small">Installs OpenWrt's tailscale package; updates come from the package repository.</span>}
     </div>
   )
 }

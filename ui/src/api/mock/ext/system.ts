@@ -277,9 +277,18 @@ function startJob(action: string, packages: string[]) {
   }, 2500)
   return {}
 }
+// pkgs-none: the optional features' packages are missing until pkg_install (about 4 s)
+const featureAt: Record<string, number> = {}
+export const featureInstalled = (f: string) => !scenario('pkgs-none') || (featureAt[f] != null && Date.now() - featureAt[f] > 4000)
 registerMock('er4', {
-  packages: () => ({ tailscale: true, ipsec: true, acme: true, job: null }),
-  pkg_install: () => ({}),
+  packages: () => {
+    const f = Object.entries(featureAt).find(([k]) => !featureInstalled(k))
+    const done = Object.keys(featureAt).sort((a, b) => featureAt[b] - featureAt[a])[0]
+    const job = f ? { action: 'install', feature: f[0], packages: [], running: true, rc: null, ok: false, log: [`(${Math.ceil((Date.now() - f[1]) / 500)}/9) Installing strongswan-mod-…`] }
+      : done ? { action: 'install', feature: done, packages: [], running: false, rc: 1, ok: true, log: ['1 error; 22.3 MiB in 236 packages'] } : null
+    return { tailscale: featureInstalled('tailscale'), ipsec: featureInstalled('ipsec'), acme: featureInstalled('acme'), job }
+  },
+  pkg_install: ({ feature }) => { featureAt[String(feature)] ??= Date.now(); return {} },
   pkg_upgrade: () => ({}),
   pkg_list: () => ({ packages: mockPkgs.map((p) => ({ ...p })), updated: now() - 3600, job: mockJob }),
   pkg_search: ({ query }) => {
@@ -303,6 +312,7 @@ registerMock('er4', {
 
 registerMock('er4', {
   acme_status: () => {
+    if (!featureInstalled('acme')) return { installed: false }
     if (!acme) return { installed: true, config: null, running: false, cert: null, serving: false, lan: '192.168.1.1', log: [] }
     const t = Date.now() / 1000 - acme.since
     const ok = !scenario('https-fail') && t >= 6

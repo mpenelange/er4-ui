@@ -3,8 +3,7 @@
 //   - phones and laptops: the built-in IKEv2 clients (iOS, macOS, Windows, Android 11+) with a
 //     username and password; the router's own CA signs its server certificate
 //   - site-to-site: another router or a cloud gateway, pre-shared key, both sides' subnets
-import { InstallFeature } from '../../components/install'
-import { useState } from 'preact/hooks'
+import { useEffect, useState } from 'preact/hooks'
 import { uci } from '../../api/uci'
 import { useAsync, usePoll } from '../../api/store'
 import { stagedSections, zones as zonesOf } from '../../api/firewall'
@@ -21,6 +20,8 @@ import { CopyButton } from '../../components/copy'
 import { Icon } from '../../components/icons'
 import { go } from '../../app'
 import type { VpnData } from './shared'
+import { VpnSetupCard, reachableZones } from './setup-card'
+import { useInstall } from '../../components/install'
 
 const save = (name: string, text: string, type: string) => {
   const a = document.createElement('a')
@@ -32,57 +33,68 @@ const save = (name: string, text: string, type: string) => {
 
 export function IpsecCard({ data, sub, id }: { data: VpnData; sub?: string; id?: string }) {
   const st = usePoll(ipsec.status, 5000).samples[0]
+  // the UCI 'ipsec' config comes with strongSwan's packages: read again once they're installed
   const cfg = useAsync(async () => {
     const [c, staged] = await Promise.all([uci.get('ipsec').catch(() => ({} as UciConfig)), stagedSections()])
     return { c, staged: staged.ipsec ?? new Set<string>() }
-  })
+  }, [st?.installed])
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<unknown>()
-  if (st && !st.installed) return (
-    <Card title="IPsec / IKEv2"><InstallFeature feature="ipsec" what="strongSwan (IKEv2 with username and password, certificates)" /></Card>
-  )
-  if (!st?.installed || !cfg.data) return null
-  const c = cfg.data.c
+  const [reach, setReach] = useState<string[]>()
+  // "Set up IPsec" before strongSwan was there: set up once it's installed
+  const [pending, setPending] = useState<string[]>()
+  const pkg = useInstall('ipsec')
   const run = async (f: () => Promise<unknown>) => {
     setBusy(true)
     try { await f(); setErr(undefined) } catch (e) { setErr(e) } finally { setBusy(false) }
   }
+  useEffect(() => {
+    if (!pending || !st?.installed || !cfg.data || cfg.loading) return
+    const r = pending
+    setPending(undefined)
+    run(() => setupIpsec(data.net, data.fw, cfg.data!.c, r))
+  }, [pending, st?.installed, cfg.data, cfg.loading])
+  if (!st) return null
   const wired = !!ipsecNetwork(data.net)
+  if (!st.installed || !wired || pending) {
+    const inside = reachableZones(zonesOf(data.fw))
+    const r = reach ?? (inside.some((z) => z.name === 'lan') ? ['lan'] : [])
+    const installing = pkg.running || (pending && !st.installed)
+    return (
+      <VpnSetupCard title="IPsec / IKEv2" name="IPsec"
+        intro="The VPN built into phones and laptops (iOS, macOS, Windows, Android 11+), no app needed: they sign in with a username and password. Also tunnels to other routers or cloud networks."
+        zones={inside} reach={r} onReach={setReach} busy={busy || !cfg.data}
+        onSetUp={() => {
+          if (st.installed && cfg.data) return run(() => setupIpsec(data.net, data.fw, cfg.data!.c, r))
+          setPending(r)
+          pkg.start().catch(() => setPending(undefined))
+        }}
+        installing={installing ? pkg.last ?? '' : undefined} failedLog={pkg.failed ? pkg.log : undefined} error={err ?? pkg.error}
+        note={st.installed ? 'Stages the network, its firewall zone and the WAN rules for IKE and ESP. Nothing changes until you apply.'
+          : "Installs strongSwan from the OpenWrt package repository first; it stays off until you've added a device or a site. The network and firewall changes are staged until you apply."} />
+    )
+  }
+  if (!cfg.data) return null
+  const c = cfg.data.c
   const lan = Object.entries(interfaceSubnets(data.net)).filter(([n]) => !/^wan/.test(n) && n !== 'loopback' && data.net[n]?.proto === 'static').map(([n, s]) => ({ net: n, cidr: cidrStr(s) }))
   const sites = siteRemotes(c)
   const editing = sub === 'ipsec' && id ? (id === 'new' ? 'new' : c[id]) : undefined
   return (
     <Card title={<span class="row">IPsec / IKEv2 {cfg.data.staged.size > 0 && <Badge status="accent">unapplied</Badge>}</span>}
-      actions={wired ? <Badge status={st.running ? 'good' : 'warning'}>{st.running ? 'running' : 'not running'}</Badge> : null}>
+      actions={<Badge status={st.running ? 'good' : 'warning'}>{st.running ? 'running' : 'not running'}</Badge>}>
       <div class="stack">
         {err != null && <ErrorBox error={err} />}
-        {!wired ? <SetUp data={data} busy={busy} onSetUp={(reach) => run(() => setupIpsec(data.net, data.fw, c, reach))} /> : <>
+        <>
           <RoadWarriors c={c} st={st} data={data} lan={lan} busy={busy} run={run} />
           <section>
             <h4 class="section-h">Site-to-site <span style={{ flex: 1 }} /><Button variant="ghost" icon="plus" onClick={() => go('vpn', 'ipsec', 'new')}>Add a site</Button></h4>
             {sites.length ? sites.map((r) => <SiteRow r={r} c={c} sa={st.sas?.find((x) => x.name === r['.name'])} />)
               : <p class="muted small" style={{ margin: 0 }}>none</p>}
           </section>
-        </>}
+        </>
       </div>
       {editing && <SiteDrawer c={c} data={data} lan={lan} site={editing === 'new' ? undefined : editing as UciSection} onClose={() => go('vpn')} />}
     </Card>
-  )
-}
-
-function SetUp({ data, busy, onSetUp }: { data: VpnData; busy: boolean; onSetUp: (reach: string[]) => void }) {
-  const inside = zonesOf(data.fw).filter((z) => !z.masq && !['ipsec', 'vpn', 'tailscale'].includes(z.name))
-  const [reach, setReach] = useState<string[]>(inside.some((z) => z.name === 'lan') ? ['lan'] : [])
-  return (
-    <div class="stack">
-      <span class="secondary">Built-in VPN of phones and laptops (no app), and tunnels to other routers or cloud networks.</span>
-      <div class="row" style={{ flexWrap: 'wrap' }}>
-        <span class="muted small">May reach</span>
-        <MultiChips value={reach} onChange={setReach} label="Zones IPsec may reach" options={inside.map((z) => ({ value: z.name, label: z.name, slot: z.slot }))} />
-        <span style={{ flex: 1 }} />
-        <Button variant="primary" disabled={busy} onClick={() => onSetUp(reach)}>Set up IPsec</Button>
-      </div>
-    </div>
   )
 }
 

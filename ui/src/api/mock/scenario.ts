@@ -34,6 +34,7 @@ export const SCENARIOS = {
   'vpn-error': 'WireGuard status read fails',
   'vpn-staged': 'WireGuard changes staged at startup',
   'ts-none': 'Tailscale not downloaded yet (fresh router)',
+  'pkgs-none': 'Tailscale, strongSwan and acme.sh not installed (installs take ~4 s)',
   'clock-behind': "router clock 105 days behind (no NTP): its timestamps aren't the browser's",
   'no-password': 'factory-fresh: root has no password (login page asks to set one)',
   'https-fail': 'issuing the HTTPS certificate fails (Cloudflare refuses the token)',

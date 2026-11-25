@@ -27,15 +27,17 @@
 .vpn-conf .copy { position: absolute; top: var(--sp-2); right: var(--sp-2); }
 .vpn-2col { display: grid; grid-template-columns: 2fr 1fr; gap: var(--sp-3); }
 
-/* setup wizard */
-.vpn-setup { max-width: 860px; }
-.vpn-setup-head { display: flex; gap: var(--sp-3); margin-bottom: var(--sp-4); }
-.vpn-setup-head p { margin: 4px 0 0; max-width: 640px; }
-.vpn-setup-icon { display: grid; place-items: center; width: 44px; height: 44px; flex: none; color: var(--accent); background: var(--accent-soft); border-radius: var(--radius); }
+/* set-up cards (setup-card.tsx): the same layout for WireGuard, Tailscale and IPsec */
+.vpn-intro { margin: 0; max-width: 72ch; }
+.vpn-setup-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); padding-top: var(--sp-3); border-top: 1px solid var(--border); }
+.vpn-setup-options > summary { cursor: pointer; display: flex; align-items: baseline; gap: var(--sp-2); }
+.vpn-setup-options > summary::-webkit-details-marker { display: none; }
+.vpn-setup-options > summary::before { content: '▸'; color: var(--text-muted); font-size: var(--fs-xs); width: 1ch; }
+.vpn-setup-options[open] > summary::before { content: '▾'; }
+.vpn-setup-options[open] > summary { margin-bottom: var(--sp-3); }
 .vpn-setup-grid { display: grid; grid-template-columns: 160px 220px 1fr; gap: var(--sp-4); align-items: start; }
-.vpn-setup-grid > label { grid-column: 1 / -1; }
-.vpn-setup-foot { display: flex; align-items: center; gap: var(--sp-4); margin-top: var(--sp-4); padding-top: var(--sp-3); border-top: 1px solid var(--border); font-size: var(--fs-sm); }
-.vpn-setup-foot .muted { flex: 1; }
+.vpn-setup-grid > .vpn-setup-toggle { grid-column: 1 / -1; cursor: pointer; }
+@media (max-width: 720px) { .vpn-setup-grid { grid-template-columns: 1fr; } }
 
 .wg-conf { width: 100%; min-height: 180px; resize: vertical; font-size: var(--fs-sm); }
 .ipsec-user, .ipsec-site { gap: var(--sp-2); padding: 4px 0; border-bottom: 1px solid var(--border); }

@@ -13,6 +13,7 @@
 //   vpn-many    wg0 with 26 peers in every state (online, stale, never, disabled)
 //   vpn-error   wg_instances fails (status unknown, config still editable)
 //   vpn-staged  starts with unapplied changes (a peer disabled, a peer added)
+import { featureInstalled } from './system'
 import { UBUS_STATUS, UbusError } from '../../ubus'
 import { mockUci, registerMock } from '../registry'
 import { afterInit, editLive, mockNow, removeWhere, scenario, section, stage } from '../scenario'
@@ -125,7 +126,7 @@ const tsNode = (name: string, ip: string, os: string, online: boolean, extra: ob
 })
 registerMock('er4', {
   tailscale_status: () => {
-    if (scenario('ts-none') && !(ts.installAt && Date.now() - ts.installAt > 4000)) {
+    if ((scenario('ts-none') || scenario('pkgs-none')) && !(ts.installAt && Date.now() - ts.installAt > 4000)) {
       return { installed: false, install: ts.installAt ? { state: 'downloading' } : null }
     }
     if (!ts.running) return { installed: true, enabled: ts.enabled, running: false, ...tsVersion() }
@@ -158,6 +159,7 @@ let ipsecCert: { host: string } | undefined
 const MOCK_CA = '-----BEGIN CERTIFICATE-----\nMIIBXjCCAQSgAwIBAgIIMockCAforER4wCgYIKoZIzj0EAwIwFjEUMBIGA1UEAxML\nRVItNCBWUE4gQ0EwHhcNMjYxMDE1MDAwMDAwWhcNMzYxMDEyMDAwMDAwWjAWMRQw\n-----END CERTIFICATE-----\n'
 registerMock('er4', {
   ipsec_status: () => {
+    if (!featureInstalled('ipsec')) return { installed: false }
     const cfg = mockUci.live.ipsec ?? {}
     const sas: object[] = []
     const users = Object.values(cfg).filter((s) => s['.type'] === 'mschapv2_secrets').map((s) => String(s.id))

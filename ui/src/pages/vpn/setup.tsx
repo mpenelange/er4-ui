@@ -1,4 +1,4 @@
-// "Set up WireGuard" (no WireGuard interface yet). Stages, in one go:
+// WireGuard's set-up card (no WireGuard interface yet; also the "New tunnel" drawer). Stages, in one go:
 //   network:  interface wg0 (proto wireguard, private key, listen port, tunnel address)
 //   firewall: zone 'vpn' (or wg0 added to an existing one), forwardings vpn -> chosen zones
 //             (+ vpn -> wan for full-tunnel devices), rule "Allow-WireGuard" on wan UDP port
@@ -7,14 +7,13 @@ import { uci } from '../../api/uci'
 import { forwardings, zones as zonesOf } from '../../api/firewall'
 import { cidr, cidrStr, interfaceSubnets } from '../../api/ip4'
 import { freeTunnelSubnet, freeWgName, wg, wgInterfaces } from '../../api/wireguard'
-import { Button, Card, ErrorBox, Field, Toggle } from '../../components/ui'
-import { Icon } from '../../components/icons'
-import { MultiChips } from '../../components/chips'
+import { Field, Toggle } from '../../components/ui'
+import { VpnSetupCard, reachableZones } from './setup-card'
 import type { VpnData } from './shared'
 
 export function Setup({ data, onDone }: { data: VpnData; onDone?: (iface: string) => void }) {
   const zones = zonesOf(data.fw)
-  const inside = zones.filter((z) => !z.masq && z.name !== 'vpn')
+  const inside = reachableZones(zones)
   const wan = zones.find((z) => z.masq) ?? zones.find((z) => z.name === 'wan')
   const subnets = interfaceSubnets(data.net)
   // a second road-warrior tunnel needs its own port
@@ -54,35 +53,24 @@ export function Setup({ data, onDone }: { data: VpnData; onDone?: (iface: string
   }
 
   return (
-    <div class="vpn-setup">
-      <Card>
-        <div class="vpn-setup-head">
-          <span class="vpn-setup-icon"><Icon name="vpn" size={22} /></span>
-          <div>
-            <h2>Reach home from anywhere with WireGuard</h2>
-            <p class="secondary">Phones and laptops connect to this router over an encrypted tunnel, then use your home network (and, if you like, your home internet) as if they were here. Defaults below work for most homes.</p>
-          </div>
-        </div>
-        {error ? <ErrorBox error={error} /> : null}
-        <div class="vpn-setup-grid">
-          <Field label="Port (UDP)" hint="Opened on the internet side" error={!portOk ? '1-65535' : portClash ? 'Another tunnel listens there' : undefined}>
-            <input class={`input mono${portOk && !portClash ? '' : ' invalid'}`} value={port} onInput={(e) => setPort((e.target as HTMLInputElement).value.trim())} />
-          </Field>
-          <Field label="Tunnel network" hint={clash ? `Overlaps ${clash[0]}` : 'Router address / size; devices get the next free addresses'} error={addrOk && !clash ? undefined : clash ? `Same subnet as ${clash[0]}` : 'e.g. 10.200.0.1/24'}>
-            <input class={`input mono${addrOk && !clash ? '' : ' invalid'}`} value={address} onInput={(e) => setAddress((e.target as HTMLInputElement).value.trim())} />
-          </Field>
-          <Field label="VPN devices may reach" hint="Click to choose; change any time on the Firewall zone map">
-            <MultiChips value={reach} onChange={setReach} label="Reachable zones" options={inside.map((z) => ({ value: z.name, label: z.name, slot: z.slot }))} />
-          </Field>
-          <label class="row" style={{ cursor: 'pointer', alignSelf: 'center' }}>
-            <Toggle on={internet} label="Allow internet through home" onChange={setInternet} /> Let VPN devices use this internet connection (needed for "full tunnel")
-          </label>
-        </div>
-        <div class="vpn-setup-foot">
-          <span class="muted">Stages interface {name}, firewall zone <b>vpn</b>, {reach.length + (internet ? 1 : 0)} forwarding{reach.length + (internet ? 1 : 0) === 1 ? '' : 's'} and a rule allowing UDP {port} from {wan?.name ?? 'wan'}. Nothing is live until you apply.</span>
-          <Button variant="primary" icon="check" disabled={busy || !portOk || portClash || !addrOk || !!clash} onClick={create}>{busy ? 'Generating keys…' : 'Set up WireGuard'}</Button>
-        </div>
-      </Card>
-    </div>
+    <VpnSetupCard title="WireGuard" name="WireGuard"
+      intro="Phones and laptops connect to this router over an encrypted tunnel (the WireGuard app), then use your home network, and your home internet if you like, as if they were here."
+      zones={inside} reach={reach} onReach={setReach} busy={busy} disabled={!portOk || portClash || !addrOk || !!clash} onSetUp={create} error={error}
+      note={<>Stages interface {name}, firewall zone <b>vpn</b> and a rule allowing UDP {port} from {wan?.name ?? 'wan'}. Nothing changes until you apply.</>}>
+      <details class="vpn-setup-options" open={!portOk || portClash || !addrOk || !!clash}>
+        <summary><span class="muted small">Options</span> <span class="mono small">UDP {port} · {address} · {internet ? 'full tunnel' : 'home network only'}</span></summary>
+      <div class="vpn-setup-grid">
+        <Field label="Port (UDP)" hint="Opened on the internet side" error={!portOk ? '1-65535' : portClash ? 'Another tunnel listens there' : undefined}>
+          <input class={`input mono${portOk && !portClash ? '' : ' invalid'}`} value={port} onInput={(e) => setPort((e.target as HTMLInputElement).value.trim())} />
+        </Field>
+        <Field label="Tunnel network" hint={clash ? `Overlaps ${clash[0]}` : 'Router address / size; devices get the next free addresses'} error={addrOk && !clash ? undefined : clash ? `Same subnet as ${clash[0]}` : 'e.g. 10.200.0.1/24'}>
+          <input class={`input mono${addrOk && !clash ? '' : ' invalid'}`} value={address} onInput={(e) => setAddress((e.target as HTMLInputElement).value.trim())} />
+        </Field>
+        <label class="row vpn-setup-toggle">
+          <Toggle on={internet} label="Allow internet through home" onChange={setInternet} /> VPN devices may use this internet connection (full tunnel)
+        </label>
+      </div>
+      </details>
+    </VpnSetupCard>
   )
 }
